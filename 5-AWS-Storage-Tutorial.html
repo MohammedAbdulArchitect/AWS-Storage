@@ -1072,10 +1072,10 @@ timeline
   Day 0 : Object created (current version)
   Day 30 : Transition to Standard-IA
   Day 60 : Transition to Intelligent-Tiering
-  Day 90 : Transition to Glacier Instant Retrieval ; Non-current versions move to Glacier Flexible Retrieval
+  Day 90 : Transition to Glacier Instant Retrieval, Non-current versions move to Glacier Flexible Retrieval
   Day 180 : Transition to Glacier Flexible Retrieval
   Day 365 : Transition to Glacier Deep Archive
-  Day 700 : Current version expires ; Non-current versions permanently deleted
+  Day 700 : Current version expires, Non-current versions permanently deleted
         </div>
       </div>
 
@@ -1568,3 +1568,28 @@ flowchart LR
   });
 
   // Active TOC highlight on scroll
+  function updateActiveTocLink() {
+    const headings = document.querySelectorAll('h2, h3');
+    const links = document.querySelectorAll('.toc-list a');
+    
+    let current = '';
+    headings.forEach(heading => {
+      const rect = heading.getBoundingClientRect();
+      if (rect.top <= 200) {
+        current = heading.id;
+      }
+    });
+    
+    links.forEach(link => {
+      link.classList.remove('active');
+      if (link.getAttribute('href') === '#' + current) {
+        link.classList.add('active');
+      }
+    });
+  }
+  
+  window.addEventListener('scroll', updateActiveTocLink);
+  updateActiveTocLink();
+</script>
+</body>
+</html>

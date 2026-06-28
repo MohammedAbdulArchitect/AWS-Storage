@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amazon S3 Deep Dive — Object Storage, Security &amp; Static Hosting | Cloud Tutorial</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-card: #1c2230;
+    --bg-sidebar: #111827;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --accent-orange: #f97316;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border-color: #2d3748;
+    --border-bright: #374151;
+    --sidebar-width: 280px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    display: flex;
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  /* ── Progress bar ── */
+  #progress-bar {
+    position: fixed; top: 0; left: var(--sidebar-width); right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+    transform-origin: left; transform: scaleX(0);
+    z-index: 200; transition: transform 0.1s linear;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: var(--sidebar-width);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    position: fixed; top: 0; left: 0; bottom: 0;
+    overflow-y: auto; z-index: 100;
+    display: flex; flex-direction: column;
+  }
+
+  .sidebar-logo { padding: 20px 20px 16px; border-bottom: 1px solid var(--border-color); }
+  .sidebar-logo .brand {
+    font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 600;
+    color: var(--accent-cyan); letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .sidebar-logo .subtitle { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+  .toc-title {
+    padding: 16px 20px 8px; font-size: 10px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
+  }
+
+  .toc-list { list-style: none; padding: 0 8px 20px; }
+  .toc-list li a {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-radius: 6px; text-decoration: none; color: var(--text-secondary);
+    font-size: 13px; font-weight: 400; transition: all 0.2s;
+  }
+  .toc-list li a:hover, .toc-list li a.active {
+    background: rgba(6,182,212,0.12); color: var(--accent-cyan);
+  }
+  .toc-list li a .icon { font-size: 14px; width: 18px; flex-shrink: 0; }
+  .toc-list li a .num {
+    font-size: 10px; background: var(--bg-card); border: 1px solid var(--border-color);
+    padding: 1px 5px; border-radius: 3px; color: var(--text-muted);
+    margin-left: auto; font-family: 'JetBrains Mono', monospace;
+  }
+  .toc-divider { height: 1px; background: var(--border-color); margin: 8px 20px; }
+  .toc-list li.toc-divider-item { padding: 0; }
+  .toc-list li.toc-divider-item:hover { background: none; }
+  .toc-list li.toc-divider-item a { display: none; }
+
+  /* ── Main ── */
+  .main-content { margin-left: var(--sidebar-width); flex: 1; min-height: 100vh; }
+
+  .page-header {
+    background: linear-gradient(135deg, #0a1628 0%, #0d1f3c 50%, #081525 100%);
+    border-bottom: 1px solid var(--border-color);
+    padding: 56px 60px 48px; position: relative; overflow: hidden;
+  }
+  .page-header::before {
+    content: ''; position: absolute; top: -60px; right: -60px;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(6,182,212,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .page-header::after {
+    content: ''; position: absolute; bottom: -80px; left: 200px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(59,130,246,0.07) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .header-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.3);
+    color: var(--accent-cyan); padding: 4px 12px; border-radius: 20px;
+    font-size: 12px; font-weight: 500; margin-bottom: 20px;
+  }
+  .page-title {
+    font-family: 'Sora', sans-serif; font-size: 36px; font-weight: 700;
+    color: #fff; line-height: 1.2; margin-bottom: 12px;
+  }
+  .page-title span { color: var(--accent-cyan); }
+  .page-subtitle { font-size: 16px; color: var(--text-secondary); max-width: 640px; margin-bottom: 28px; }
+  .header-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+  .tag-blue   { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+  .tag-cyan   { background: rgba(6,182,212,0.12);  color: #22d3ee; border: 1px solid rgba(6,182,212,0.25); }
+  .tag-green  { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+  .tag-amber  { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+  .tag-purple { background: rgba(139,92,246,0.12); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.25); }
+
+  /* ── Content ── */
+  .content-wrap { max-width: 900px; padding: 48px 60px 80px; }
+
+  .section-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2);
+    color: var(--accent-cyan); padding: 3px 10px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 10px;
+  }
+
+  h2.section-heading {
+    font-family: 'Sora', sans-serif; font-size: 26px; font-weight: 700;
+    color: #fff; margin-bottom: 6px; padding-top: 4px;
+  }
+  .section-intro { color: var(--text-secondary); font-size: 15px; margin-bottom: 28px; max-width: 700px; }
+  h3 { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 600; color: #e2e8f0; margin: 28px 0 12px; }
+  h4 { font-family: 'Sora', sans-serif; font-size: 15px; font-weight: 600; color: #cbd5e1; margin: 20px 0 8px; }
+  p  { margin-bottom: 14px; color: var(--text-secondary); }
+  .section-sep { border: none; border-top: 1px solid var(--border-color); margin: 52px 0 44px; }
+  .page-section { scroll-margin-top: 24px; }
+  .highlight { color: var(--accent-cyan); font-weight: 600; }
+
+  /* ── Cards ── */
+  .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+  .card-title { font-family: 'Sora', sans-serif; font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+
+  /* ── Product Grid ── */
+  .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px,1fr)); gap: 16px; margin: 20px 0 28px; }
+  .product-card {
+    background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px;
+    padding: 20px; transition: border-color 0.2s, transform 0.2s; position: relative; overflow: hidden;
+  }
+  .product-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+  .product-card.blue::before   { background: var(--accent-blue); }
+  .product-card.cyan::before   { background: var(--accent-cyan); }
+  .product-card.green::before  { background: var(--accent-green); }
+  .product-card.amber::before  { background: var(--accent-amber); }
+  .product-card.purple::before { background: var(--accent-purple); }
+  .product-card.red::before    { background: var(--accent-red); }
+  .product-card.orange::before { background: var(--accent-orange); }
+  .product-card:hover { border-color: var(--border-bright); transform: translateY(-2px); }
+  .product-card .pname { font-family: 'Sora', sans-serif; font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .product-card .pfull { font-size: 11px; color: var(--text-muted); font-style: italic; margin-bottom: 10px; }
+  .product-card .pbadge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; margin-bottom: 10px; }
+  .product-card .pdesc { font-size: 13px; color: var(--text-secondary); margin: 0; }
+  .badge-s3   { background: rgba(6,182,212,0.15);  color: #67e8f9; }
+  .badge-sec  { background: rgba(245,158,11,0.15); color: #fcd34d; }
+  .badge-web  { background: rgba(16,185,129,0.15); color: #34d399; }
+  .badge-ver  { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+  .badge-iam  { background: rgba(59,130,246,0.15); color: #93c5fd; }
+
+  /* ── Callouts ── */
+  .callout { border-radius: 8px; padding: 16px 20px; margin: 20px 0; display: flex; gap: 14px; }
+  .callout-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .callout-body { flex: 1; }
+  .callout-title { font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+  .callout-text  { font-size: 13.5px; margin: 0; line-height: 1.6; }
+  .callout.tip     { background: rgba(16,185,129,0.08);  border: 1px solid rgba(16,185,129,0.25); }
+  .callout.tip .callout-title { color: #34d399; } .callout.tip .callout-text { color: #a7f3d0; }
+  .callout.warning { background: rgba(245,158,11,0.08);  border: 1px solid rgba(245,158,11,0.25); }
+  .callout.warning .callout-title { color: #fcd34d; } .callout.warning .callout-text { color: #fde68a; }
+  .callout.info    { background: rgba(59,130,246,0.08);  border: 1px solid rgba(59,130,246,0.25); }
+  .callout.info .callout-title { color: #93c5fd; } .callout.info .callout-text { color: #bfdbfe; }
+  .callout.exam    { background: rgba(139,92,246,0.08);  border: 1px solid rgba(139,92,246,0.25); }
+  .callout.exam .callout-title { color: #c4b5fd; } .callout.exam .callout-text { color: #ddd6fe; }
+  .callout.note    { background: rgba(6,182,212,0.08);   border: 1px solid rgba(6,182,212,0.2); }
+  .callout.note .callout-title { color: #67e8f9; } .callout.note .callout-text { color: #cffafe; }
+
+  /* ── Code ── */
+  pre, code { font-family: 'JetBrains Mono', monospace; }
+  pre { background: #0a0f1a; border: 1px solid var(--border-color); border-left: 3px solid var(--accent-cyan); border-radius: 6px; padding: 18px 20px; overflow-x: auto; font-size: 13px; color: #a5d8ff; margin: 14px 0; line-height: 1.6; }
+  code { background: rgba(6,182,212,0.1); color: #67e8f9; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  pre code { background: none; color: inherit; padding: 0; }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 14px; }
+  thead th { background: var(--bg-secondary); color: var(--accent-cyan); font-family: 'Sora', sans-serif; font-weight: 600; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; padding: 12px 16px; border-bottom: 2px solid var(--border-color); text-align: left; }
+  tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); vertical-align: top; }
+  tbody tr:hover td { background: rgba(6,182,212,0.04); }
+  tbody td:first-child { color: #e2e8f0; font-weight: 500; }
+
+  /* ── Steps ── */
+  .steps-list { counter-reset: step-counter; list-style: none; margin: 16px 0; }
+  .steps-list li { counter-increment: step-counter; display: flex; gap: 14px; margin-bottom: 14px; align-items: flex-start; }
+  .steps-list li::before { content: counter(step-counter); background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue)); color: #fff; font-weight: 700; font-size: 12px; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .steps-list li span { font-size: 14px; color: var(--text-secondary); }
+
+  /* ── Bullet list ── */
+  ul.bullet-list { list-style: none; margin: 10px 0; }
+  ul.bullet-list li { font-size: 14px; color: var(--text-secondary); padding: 5px 0; padding-left: 18px; position: relative; }
+  ul.bullet-list li::before { content: '▸'; position: absolute; left: 0; color: var(--accent-cyan); font-size: 12px; }
+
+  /* ── Compare grid ── */
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .compare-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
+  .compare-card.success { border-color: rgba(16,185,129,0.3); }
+  .compare-card.danger  { border-color: rgba(239,68,68,0.3); }
+  .compare-card.info    { border-color: rgba(59,130,246,0.3); }
+  .compare-card h4 { margin-top: 0; }
+  .compare-card ul { list-style: none; margin-top: 10px; }
+  .compare-card ul li { font-size: 13.5px; color: var(--text-secondary); padding: 5px 0; border-bottom: 1px solid var(--border-color); display: flex; align-items: flex-start; gap: 8px; }
+  .compare-card ul li:last-child { border-bottom: none; }
+  .compare-card.success ul li::before { content: '✓'; color: var(--accent-green); }
+  .compare-card.danger  ul li::before { content: '✗'; color: var(--accent-red); }
+  .compare-card.info    ul li::before { content: '→'; color: var(--accent-blue); }
+
+  /* ── SVG / Diagram wrappers ── */
+  .svg-wrap { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 24px; margin: 20px 0; overflow-x: auto; text-align: center; }
+  .svg-caption { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+
+  /* ── Mermaid ── */
+  .mermaid-wrap { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 24px; margin: 20px 0; overflow-x: auto; }
+  .mermaid-caption { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+  .mermaid svg text, .mermaid svg tspan { fill: #86efac !important; stroke: none !important; }
+  .mermaid svg .label, .mermaid svg .nodeLabel, .mermaid svg .edgeLabel { fill: #86efac !important; }
+  .mermaid foreignObject div, .mermaid foreignObject span, .mermaid foreignObject p { color: #86efac !important; background: transparent !important; }
+  .mermaid svg .edgeLabel rect, .mermaid svg .edgeLabel foreignObject { fill: #162d4a !important; }
+  .mermaid svg .node rect, .mermaid svg .node circle, .mermaid svg .node ellipse, .mermaid svg .node polygon, .mermaid svg .node path { fill: #1e4080 !important; stroke: #60a5fa !important; stroke-width: 1.5px !important; }
+  .mermaid svg .cluster rect, .mermaid svg .subgraph rect { fill: #0d1e35 !important; stroke: #3b82f6 !important; }
+  .mermaid svg .actor { fill: #1e4080 !important; stroke: #60a5fa !important; }
+  .mermaid svg path.flowchart-link, .mermaid svg path[class*="edge"], .mermaid svg path[class*="arrow"] { stroke: #94a3b8 !important; fill: none !important; }
+  .mermaid svg marker path, .mermaid svg marker polygon { fill: #94a3b8 !important; stroke: #94a3b8 !important; }
+
+  /* ── Animated flow ── */
+  @keyframes dashflow { to { stroke-dashoffset: -20; } }
+  .flow-line { animation: dashflow 1.5s linear infinite; }
+
+  /* ── Q&amp;A ── */
+  .qa-list { margin: 16px 0; }
+  .qa-item { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 18px 20px; margin-bottom: 14px; }
+  .qa-q { font-weight: 600; color: #e2e8f0; font-size: 14px; margin-bottom: 10px; display: flex; gap: 8px; align-items: flex-start; }
+  .qa-q::before { content: 'Q'; background: var(--accent-cyan); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 3px; font-family: 'Sora', sans-serif; flex-shrink: 0; margin-top: 2px; }
+  .qa-a { font-size: 13.5px; color: var(--text-secondary); padding-left: 28px; line-height: 1.7; margin: 0; }
+
+  /* ── Author section ── */
+  .author-section { background: linear-gradient(135deg, #0a1628 0%, #0d1f3c 100%); border: 1px solid rgba(6,182,212,0.25); border-radius: 12px; padding: 32px; margin-top: 56px; }
+  .author-header { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px; }
+  .author-avatar { width: 70px; height: 70px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue)); display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
+  .author-meta h3 { margin: 0 0 4px; font-size: 20px; color: #fff; }
+  .author-meta .role { font-size: 13px; color: var(--accent-cyan); margin-bottom: 8px; }
+  .author-meta p { font-size: 14px; color: var(--text-secondary); margin: 0; }
+  .tech-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+  .tech-badge { background: rgba(6,182,212,0.12); border: 1px solid rgba(6,182,212,0.25); color: #22d3ee; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+  .email-card { display: inline-flex; align-items: center; gap: 8px; background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.25); padding: 10px 16px; border-radius: 8px; text-decoration: none; color: var(--accent-cyan); font-size: 14px; font-weight: 500; transition: background 0.2s; margin-top: 8px; }
+  .email-card:hover { background: rgba(6,182,212,0.14); }
+  .disclaimer-box { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.2); border-radius: 8px; padding: 14px 18px; margin-top: 20px; font-size: 12.5px; color: #fde68a; line-height: 1.6; }
+  .disclaimer-box strong { color: #fcd34d; }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main-content { margin-left: 0; }
+    .page-header { padding: 36px 24px 32px; }
+    .content-wrap { padding: 32px 24px 60px; }
+    .page-title { font-size: 26px; }
+    .compare-grid { grid-template-columns: 1fr; }
+    #progress-bar { left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- ══ SIDEBAR ══════════════════════════════════════════════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="brand">☁️ AWS Cloud Tutorials</div>
+    <div class="subtitle">Object Storage · Security · Hosting</div>
+  </div>
+  <div class="toc-title">Table of Contents</div>
+  <ul class="toc-list">
+    <li><a href="#overview">    <span class="icon">🗂️</span> S3 Fundamentals          <span class="num">01</span></a></li>
+    <li><a href="#anatomy">     <span class="icon">🔬</span> Buckets &amp; Objects      <span class="num">02</span></a></li>
+    <li class="toc-divider-item"><div class="toc-divider"></div></li>
+    <li><a href="#security">    <span class="icon">🔐</span> S3 Security Model         <span class="num">03</span></a></li>
+    <li><a href="#bucket-policy"><span class="icon">📋</span> Bucket Policies           <span class="num">04</span></a></li>
+    <li><a href="#access-patterns"><span class="icon">🔑</span> IAM &amp; Access Patterns <span class="num">05</span></a></li>
+    <li class="toc-divider-item"><div class="toc-divider"></div></li>
+    <li><a href="#static-hosting"><span class="icon">🌐</span> Static Website Hosting   <span class="num">06</span></a></li>
+    <li><a href="#versioning">  <span class="icon">🔄</span> Object Versioning         <span class="num">07</span></a></li>
+    <li class="toc-divider-item"><div class="toc-divider"></div></li>
+    <li><a href="#architecture"><span class="icon">🏗️</span> Architecture Diagrams     <span class="num">08</span></a></li>
+    <li><a href="#interview">   <span class="icon">💼</span> Interview Q&amp;A          <span class="num">09</span></a></li>
+    <li><a href="#about">       <span class="icon">👤</span> About the Author          <span class="num">10</span></a></li>
+  </ul>
+</nav>
+
+<!-- ══ MAIN ══════════════════════════════════════════════════════════════ -->
+<main class="main-content">
+
+  <div class="page-header">
+    <div class="header-badge">☁️ AWS Cloud Tutorial Series</div>
+    <h1 class="page-title">Amazon S3 Deep Dive<br><span>Object Storage, Security &amp; Static Hosting</span></h1>
+    <p class="page-subtitle">A practitioner-focused guide to Amazon Simple Storage Service — covering bucket design, access control patterns, static web hosting, and object versioning with real-world architecture examples.</p>
+    <div class="header-tags">
+      <span class="tag tag-cyan">Platform: AWS S3</span>
+      <span class="tag tag-blue">IAM · Bucket Policies · ACL</span>
+      <span class="tag tag-green">Static Hosting · Versioning</span>
+      <span class="tag tag-amber">Security Best Practices</span>
+      <span class="tag tag-purple">Level: Beginner–Intermediate</span>
+    </div>
+  </div>
+
+  <div class="content-wrap">
+
+    <!-- ══ SECTION 01 ══════════════════════════════════════════════════ -->
+    <section id="overview" class="page-section">
+      <div class="section-label">📍 Section 01</div>
+      <h2 class="section-heading">Amazon S3 Fundamentals</h2>
+      <p class="section-intro">Amazon Simple Storage Service (S3) is a foundational AWS object storage platform designed for virtually unlimited scalability. It serves as the backbone of countless cloud-native applications, data pipelines, and backup workflows across the globe.</p>
+
+      <h3>Why S3 Matters</h3>
+      <p>S3 is not simply a file-storage service. It is an elastic, globally resilient object repository that integrates deeply with almost every AWS service. Whether you're distributing static content, ingesting analytics data, or building a disaster recovery pipeline, S3 is typically somewhere in the architecture.</p>
+
+      <h3>Common Use Cases</h3>
+      <div class="product-grid">
+        <div class="product-card cyan">
+          <div class="pname">Backup &amp; Archive</div>
+          <span class="pbadge badge-s3">Durability 11-9s</span>
+          <p class="pdesc">Store on-premises or cloud backup copies with automated lifecycle transitions to Glacier for long-term retention at minimal cost.</p>
+        </div>
+        <div class="product-card blue">
+          <div class="pname">Disaster Recovery</div>
+          <span class="pbadge badge-s3">Cross-Region</span>
+          <p class="pdesc">Replicate critical data across AWS regions so that a regional outage does not impact data availability or business continuity.</p>
+        </div>
+        <div class="product-card green">
+          <div class="pname">Data Lake &amp; Analytics</div>
+          <span class="pbadge badge-s3">Big Data</span>
+          <p class="pdesc">Store structured and unstructured datasets at exabyte scale and query them with Athena, Redshift Spectrum, or EMR without provisioning servers.</p>
+        </div>
+        <div class="product-card amber">
+          <div class="pname">Static Asset Hosting</div>
+          <span class="pbadge badge-web">Web Scale</span>
+          <p class="pdesc">Serve HTML, CSS, JavaScript, images, and video to end users globally — with optional CloudFront CDN for low-latency delivery worldwide.</p>
+        </div>
+        <div class="product-card purple">
+          <div class="pname">Hybrid Cloud Storage</div>
+          <span class="pbadge badge-s3">Storage GW</span>
+          <p class="pdesc">Extend on-premises storage seamlessly to S3 using AWS Storage Gateway, enabling tiered archival without modifying existing applications.</p>
+        </div>
+        <div class="product-card orange">
+          <div class="pname">Software Distribution</div>
+          <span class="pbadge badge-s3">Global CDN</span>
+          <p class="pdesc">Host application binaries, firmware packages, and update manifests at unlimited scale — accessed by clients via pre-signed or public URLs.</p>
+        </div>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-icon">ℹ️</div>
+        <div class="callout-body">
+          <div class="callout-title">S3 as a Platform Primitive</div>
+          <p class="callout-text">More than a storage service, S3 is a foundational primitive for AWS integrations. Services such as CloudTrail, Config, Athena, Lambda, and SageMaker all use S3 as their default data store. Mastering S3 design patterns is therefore essential for any AWS architect or developer.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 02 ══════════════════════════════════════════════════ -->
+    <section id="anatomy" class="page-section">
+      <div class="section-label">📍 Section 02</div>
+      <h2 class="section-heading">Buckets, Objects &amp; Key Structure</h2>
+      <p class="section-intro">Understanding how S3 organises data — through buckets and object keys — is the first step toward designing efficient, well-structured storage hierarchies.</p>
+
+      <h3>Buckets — The Container Layer</h3>
+      <p>A bucket is a logical namespace that groups related objects. Each bucket is assigned to a specific AWS region at creation time, even though the S3 console presents a unified global view across all regions and accounts.</p>
+
+      <div class="compare-grid">
+        <div class="compare-card info">
+          <h4>🌍 Global Namespace (Classic)</h4>
+          <ul>
+            <li>Bucket names must be globally unique across all AWS accounts and all regions</li>
+            <li>Once reserved, a name cannot be used by anyone else</li>
+            <li>Recommended for publicly accessible buckets or CDN origins</li>
+            <li>Harder to find available short names in competitive namespaces</li>
+          </ul>
+        </div>
+        <div class="compare-card success">
+          <h4>🏢 Account-Regional Namespace (New)</h4>
+          <ul>
+            <li>AWS automatically appends an account-ID and region suffix to enforce uniqueness</li>
+            <li>You can freely choose any readable short name for your bucket</li>
+            <li>Reuse the same logical name across multiple regions within your account</li>
+            <li>Recommended approach going forward for internal and cross-account automation</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Bucket Naming Rules</h3>
+      <ul class="bullet-list">
+        <li>3–63 lowercase characters — letters, numbers, and hyphens only</li>
+        <li>Must begin with a lowercase letter or digit</li>
+        <li>Cannot be formatted as an IP address (e.g., <code>192.168.10.1</code> is invalid)</li>
+        <li>Must not begin with the prefix <code>xn--</code></li>
+        <li>Must not end with the suffix <code>-s3alias</code></li>
+        <li>No uppercase, no underscores, no consecutive hyphens</li>
+      </ul>
+
+      <h3>Object Keys — The Addressing Model</h3>
+      <p>Every piece of data stored in S3 is an <strong>object</strong>, uniquely identified by its <strong>key</strong>. The key is the full logical path of the object within the bucket.</p>
+
+      <div class="card">
+        <div class="card-title">🗂️ Object Key Structure</div>
+        <pre><code># Key of a top-level object
+reports/annual-summary-2024.pdf
+
+# Key breakdown
+Prefix   → reports/
+ObjectName → annual-summary-2024.pdf
+
+# Nested "folder" keys (folders are a visual abstraction only)
+logs/eu-west-1/app-server-01/2024-06-15.log
+
+# S3 has no true directories — the entire path is the key</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <div class="callout-icon">✅</div>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice — Key Prefix Design</div>
+          <p class="callout-text">Structure your key prefixes to align with your access patterns. For analytics, partition by date (<code>year=2024/month=06/day=15/</code>) to enable efficient partition pruning with Athena. For application data, use entity type and region as top-level prefixes to simplify lifecycle policy targeting.</p>
+        </div>
+      </div>
+
+      <h3>Object Properties</h3>
+      <table>
+        <thead><tr><th>Property</th><th>Description</th><th>Limit / Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Object Value (Body)</td><td>The actual binary content of the file</td><td>Max 5 TB per object</td></tr>
+          <tr><td>Multi-Part Upload</td><td>Required for objects larger than 5 GB</td><td>Minimum 5 MB per part (except last)</td></tr>
+          <tr><td>System Metadata</td><td>Content-Type, Content-Length, ETag, Last-Modified</td><td>Managed by S3 automatically</td></tr>
+          <tr><td>User-Defined Metadata</td><td>Custom key-value pairs attached at upload</td><td>Keys must be lowercase; max 2 KB total</td></tr>
+          <tr><td>Object Tags</td><td>Unicode key-value pairs for lifecycle, cost allocation</td><td>Up to 10 tags per object</td></tr>
+          <tr><td>Version ID</td><td>Unique identifier per object version when versioning is active</td><td>Null for pre-versioning objects</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout warning">
+        <div class="callout-icon">⚠️</div>
+        <div class="callout-body">
+          <div class="callout-title">Multi-Part Upload Requirement</div>
+          <p class="callout-text">Any object exceeding 5 GB <strong>must</strong> use the multi-part upload API — single-PUT uploads for files above 5 GB will fail. AWS recommends enabling multi-part upload for all objects above 100 MB to improve throughput and allow resumable uploads on network interruptions.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 03 ══════════════════════════════════════════════════ -->
+    <section id="security" class="page-section">
+      <div class="section-label">📍 Section 03</div>
+      <h2 class="section-heading">Amazon S3 Security Model</h2>
+      <p class="section-intro">S3 provides a multi-layered security framework. Understanding when to use each control is critical for building least-privilege architectures that are both secure and maintainable.</p>
+
+      <h3>Security Control Layers</h3>
+      <div class="product-grid">
+        <div class="product-card blue">
+          <div class="pname">IAM Policies</div>
+          <div class="pfull">Identity-Based Control</div>
+          <span class="pbadge badge-iam">User/Role Attached</span>
+          <p class="pdesc">Attached to IAM principals (users, groups, roles). Define which S3 API actions a principal may perform across any bucket.</p>
+        </div>
+        <div class="product-card cyan">
+          <div class="pname">Bucket Policies</div>
+          <div class="pfull">Resource-Based Control</div>
+          <span class="pbadge badge-sec">Bucket Attached</span>
+          <p class="pdesc">JSON policies attached directly to the bucket. Support cross-account access, public access grants, and conditional logic. Most common control mechanism.</p>
+        </div>
+        <div class="product-card amber">
+          <div class="pname">Block Public Access</div>
+          <div class="pfull">Account / Bucket Guard</div>
+          <span class="pbadge badge-sec">Override Layer</span>
+          <p class="pdesc">An independent safety layer that overrides bucket policies and ACLs to prevent unintended public exposure. Can be enforced at the account level via SCP.</p>
+        </div>
+        <div class="product-card purple">
+          <div class="pname">Object ACLs</div>
+          <div class="pfull">Fine-Grain (Legacy)</div>
+          <span class="pbadge badge-sec">Object Attached</span>
+          <p class="pdesc">Per-object access lists, predating bucket policies. Disabled by default on new buckets. Avoid unless integrating with legacy S3-aware systems that expect ACL semantics.</p>
+        </div>
+        <div class="product-card green">
+          <div class="pname">Encryption at Rest</div>
+          <div class="pfull">SSE-S3 / SSE-KMS / DSSE</div>
+          <span class="pbadge badge-sec">Data Layer</span>
+          <p class="pdesc">Server-side encryption using AWS-managed keys (SSE-S3), customer-managed KMS keys (SSE-KMS), or dual-layer KMS encryption (DSSE-KMS) for compliance requirements.</p>
+        </div>
+        <div class="product-card red">
+          <div class="pname">VPC Endpoint Policies</div>
+          <div class="pfull">Network Layer Control</div>
+          <span class="pbadge badge-iam">Network Attached</span>
+          <p class="pdesc">Restrict S3 access to requests originating from a specific VPC. Prevents data exfiltration paths that bypass corporate network controls.</p>
+        </div>
+      </div>
+
+      <h3>Access Decision Logic</h3>
+      <p>When a principal makes an S3 API request, AWS evaluates all applicable policies using the following logic:</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart TD
+    REQ([API Request Received]) --> BLOCK{Block Public Access<br/>Settings Enabled?}
+    BLOCK -->|Yes & request is public| DENY1([❌ Access Denied])
+    BLOCK -->|No| IAM{IAM Policy<br/>Allows Action?}
+    IAM -->|Explicit Deny| DENY2([❌ Access Denied])
+    IAM -->|Allow or No Statement| RES{Bucket / Resource<br/>Policy Allows?}
+    RES -->|Explicit Deny| DENY3([❌ Access Denied])
+    RES -->|Allow| ALLOW([✅ Access Granted])
+    RES -->|No statement & IAM allows| ALLOW
+    IAM -->|No statement| NOSTA{Resource Policy<br/>Grants Allow?}
+    NOSTA -->|Yes| ALLOW
+    NOSTA -->|No| DENY4([❌ Access Denied])
+        </div>
+        <p class="mermaid-caption">Figure 1 — S3 access evaluation order: Block Public Access → IAM Policy → Resource/Bucket Policy</p>
+      </div>
+
+      <div class="callout exam">
+        <div class="callout-icon">🎯</div>
+        <div class="callout-body">
+          <div class="callout-title">Interview / Certification Tip</div>
+          <p class="callout-text">The golden rule: an explicit <strong>Deny</strong> anywhere in the policy evaluation chain always wins — no Allow can override it. A principal needs <em>both</em> the IAM permission and the absence of a resource-level Deny to successfully access an S3 object. Remember: Block Public Access is evaluated <em>first</em>, before any policy.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 04 ══════════════════════════════════════════════════ -->
+    <section id="bucket-policy" class="page-section">
+      <div class="section-label">📍 Section 04</div>
+      <h2 class="section-heading">Bucket Policies — Structure &amp; Patterns</h2>
+      <p class="section-intro">Bucket policies are JSON documents that define resource-level access control for an entire bucket or specific object prefixes. They are the primary mechanism for granting cross-account access and configuring public read access for web hosting.</p>
+
+      <h3>Policy Document Structure</h3>
+      <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowPublicRead",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-web-content-bucket/*"
+    }
+  ]
+}</code></pre>
+
+      <table>
+        <thead><tr><th>Element</th><th>Purpose</th><th>Example Values</th></tr></thead>
+        <tbody>
+          <tr><td>Version</td><td>Policy language version — always use 2012-10-17</td><td><code>"2012-10-17"</code></td></tr>
+          <tr><td>Sid</td><td>Optional statement identifier for human readability</td><td><code>"AllowPublicRead"</code></td></tr>
+          <tr><td>Effect</td><td>Whether to Allow or Deny the listed actions</td><td><code>"Allow"</code> / <code>"Deny"</code></td></tr>
+          <tr><td>Principal</td><td>The IAM entity this statement applies to</td><td><code>"*"</code>, <code>"arn:aws:iam::123456789012:root"</code></td></tr>
+          <tr><td>Action</td><td>The S3 API operations to permit or deny</td><td><code>"s3:GetObject"</code>, <code>["s3:Put*","s3:Delete*"]</code></td></tr>
+          <tr><td>Resource</td><td>The bucket or object ARN the statement targets</td><td><code>"arn:aws:s3:::bucket-name/*"</code></td></tr>
+          <tr><td>Condition</td><td>Optional conditions that must be true for the statement to apply</td><td>IP range, VPC, MFA present</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Common Bucket Policy Patterns</h3>
+
+      <h4>Pattern 1 — Public Read (Static Website)</h4>
+      <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": "*",
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::portal-assets-prod/*"
+  }]
+}</code></pre>
+
+      <h4>Pattern 2 — Cross-Account Read Access</h4>
+      <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": "arn:aws:iam::987654321098:role/DataConsumerRole"
+    },
+    "Action": ["s3:GetObject", "s3:ListBucket"],
+    "Resource": [
+      "arn:aws:s3:::shared-reports-bucket",
+      "arn:aws:s3:::shared-reports-bucket/*"
+    ]
+  }]
+}</code></pre>
+
+      <h4>Pattern 3 — Enforce Encryption on Upload</h4>
+      <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Deny",
+    "Principal": "*",
+    "Action": "s3:PutObject",
+    "Resource": "arn:aws:s3:::secure-data-store/*",
+    "Condition": {
+      "StringNotEquals": {
+        "s3:x-amz-server-side-encryption": "aws:kms"
+      }
+    }
+  }]
+}</code></pre>
+
+      <div class="callout warning">
+        <div class="callout-icon">⚠️</div>
+        <div class="callout-body">
+          <div class="callout-title">Block Public Access Must Be Disabled First</div>
+          <p class="callout-text">Before a public-read bucket policy takes effect, you must disable the <strong>Block Public Access</strong> setting at the bucket level. This is a deliberate two-step mechanism: AWS requires an explicit acknowledgement that you intend to expose the bucket publicly. Never disable Block Public Access on buckets holding sensitive company data.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 05 ══════════════════════════════════════════════════ -->
+    <section id="access-patterns" class="page-section">
+      <div class="section-label">📍 Section 05</div>
+      <h2 class="section-heading">IAM &amp; Access Patterns</h2>
+      <p class="section-intro">Different principals require different access mechanisms. Choosing the wrong approach leads to either over-privilege or operational friction. The following patterns cover the four most common S3 access scenarios.</p>
+
+      <div class="svg-wrap">
+        <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:700px;">
+          <defs>
+            <linearGradient id="gBucket" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#065f46"/><stop offset="100%" stop-color="#022c22"/>
+            </linearGradient>
+            <linearGradient id="gUser" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1e3a8a"/><stop offset="100%" stop-color="#0d1e4a"/>
+            </linearGradient>
+            <linearGradient id="gRole" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#78350f"/><stop offset="100%" stop-color="#3a1a00"/>
+            </linearGradient>
+            <linearGradient id="gExt" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#4c1d95"/><stop offset="100%" stop-color="#1e0a4a"/>
+            </linearGradient>
+            <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+            </marker>
+          </defs>
+
+          <!-- S3 Bucket (centre-right) -->
+          <rect x="530" y="130" width="160" height="80" rx="10" fill="url(#gBucket)" stroke="#10b981" stroke-width="2"/>
+          <text x="610" y="165" text-anchor="middle" font-family="'Sora',sans-serif" font-size="13" font-weight="700" fill="#34d399">Amazon S3</text>
+          <text x="610" y="183" text-anchor="middle" font-family="'Inter',sans-serif" font-size="11" fill="#6ee7b7">my-app-bucket</text>
+          <text x="610" y="200" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#4ade80">us-east-1</text>
+
+          <!-- Pattern A: IAM User -->
+          <rect x="20" y="20" width="150" height="65" rx="8" fill="url(#gUser)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="95" y="48" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="600" fill="#93c5fd">IAM User</text>
+          <text x="95" y="64" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">dev-team member</text>
+          <text x="95" y="78" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#3b82f6">IAM Policy → Allow</text>
+          <line x1="170" y1="52" x2="525" y2="158" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr)" class="flow-line"/>
+
+          <!-- Pattern B: EC2 Role -->
+          <rect x="20" y="118" width="150" height="65" rx="8" fill="url(#gRole)" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="95" y="146" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="600" fill="#fcd34d">EC2 Instance</text>
+          <text x="95" y="162" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">app-server-01</text>
+          <text x="95" y="176" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#f59e0b">IAM Role → Attached</text>
+          <line x1="170" y1="150" x2="525" y2="170" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr)" class="flow-line"/>
+
+          <!-- Pattern C: Lambda Role -->
+          <rect x="20" y="216" width="150" height="65" rx="8" fill="url(#gRole)" stroke="#fb923c" stroke-width="1.5"/>
+          <text x="95" y="244" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="600" fill="#fed7aa">Lambda Function</text>
+          <text x="95" y="260" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">data-processor</text>
+          <text x="95" y="274" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#fb923c">Execution Role</text>
+          <line x1="170" y1="248" x2="525" y2="185" stroke="#fb923c" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr)" class="flow-line"/>
+
+          <!-- Pattern D: External Account -->
+          <rect x="20" y="310" width="150" height="20" rx="4" fill="url(#gExt)" stroke="#8b5cf6" stroke-width="1"/>
+          <text x="95" y="325" text-anchor="middle" font-family="'Sora',sans-serif" font-size="9" font-weight="600" fill="#c4b5fd">External Account → Bucket Policy</text>
+
+          <!-- Labels on right -->
+          <text x="360" y="55" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#3b82f6">① IAM Policy on user</text>
+          <text x="360" y="148" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#f59e0b">② IAM Role (not user credentials)</text>
+          <text x="360" y="230" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#fb923c">③ Lambda Execution Role</text>
+          <text x="360" y="300" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#8b5cf6">④ Bucket Policy (cross-account)</text>
+        </svg>
+        <p class="svg-caption">Figure 2 — Four S3 access patterns: IAM user policy, EC2 instance role, Lambda execution role, and cross-account bucket policy</p>
+      </div>
+
+      <table>
+        <thead><tr><th>Access Pattern</th><th>Mechanism</th><th>Key Rule</th></tr></thead>
+        <tbody>
+          <tr><td>IAM User accessing own account bucket</td><td>IAM policy attached to user/group</td><td>Grant <code>s3:GetObject</code>, <code>s3:PutObject</code> on the bucket ARN</td></tr>
+          <tr><td>EC2 instance accessing S3</td><td>IAM Role attached to instance profile</td><td>Never embed access keys in code — use roles only</td></tr>
+          <tr><td>Lambda function accessing S3</td><td>Lambda Execution Role</td><td>S3 permissions on the execution role, not a user</td></tr>
+          <tr><td>External AWS account accessing S3</td><td>Bucket policy with explicit external Principal ARN</td><td>The external principal also needs <em>their</em> IAM permission to assume cross-account</td></tr>
+          <tr><td>Anonymous public access</td><td>Bucket policy with <code>"Principal": "*"</code></td><td>Block Public Access must be disabled at bucket level first</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout tip">
+        <div class="callout-icon">✅</div>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice — Never Embed Access Keys</div>
+          <p class="callout-text">For compute resources (EC2, ECS, Lambda, Glue), always use IAM Roles rather than embedding static access keys. Roles provide time-limited, automatically-rotating credentials through the EC2 metadata service and are revocable at any time without application changes.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 06 ══════════════════════════════════════════════════ -->
+    <section id="static-hosting" class="page-section">
+      <div class="section-label">📍 Section 06</div>
+      <h2 class="section-heading">Static Website Hosting on S3</h2>
+      <p class="section-intro">Amazon S3 can serve static websites — HTML, CSS, JavaScript, and media — directly from a bucket endpoint without provisioning web servers. Combined with CloudFront, this pattern supports high-traffic, globally distributed web properties.</p>
+
+      <h3>How Static Hosting Works</h3>
+      <p>When you enable static website hosting on a bucket, AWS assigns it a regional endpoint in one of two formats depending on the region:</p>
+
+      <div class="card">
+        <div class="card-title">🌐 Website Endpoint Formats</div>
+        <pre><code># Format A (older regions, dot separator)
+http://&lt;bucket-name&gt;.s3-website.&lt;region&gt;.amazonaws.com
+
+# Format B (newer regions, hyphen separator)
+http://&lt;bucket-name&gt;.s3-website-&lt;region&gt;.amazonaws.com
+
+# Example
+http://portal-assets-prod.s3-website.eu-central-1.amazonaws.com</code></pre>
+      </div>
+
+      <h3>Setup Steps</h3>
+      <ol class="steps-list">
+        <li><span>Create the bucket and upload your static files (<code>index.html</code>, CSS, JS, images). Ensure the bucket name matches the intended domain if using Route 53.</span></li>
+        <li><span>Navigate to <strong>Bucket → Permissions → Block Public Access</strong> and disable the block to allow public reads. Acknowledge the confirmation prompt.</span></li>
+        <li><span>Create and attach a Bucket Policy granting <code>s3:GetObject</code> to <code>Principal: "*"</code> for all objects (<code>/*</code> suffix on the resource ARN).</span></li>
+        <li><span>Go to <strong>Bucket → Properties → Static Website Hosting</strong>, enable it, set the <strong>index document</strong> (e.g., <code>index.html</code>) and optional <strong>error document</strong> (e.g., <code>404.html</code>).</span></li>
+        <li><span>Copy the generated <strong>Bucket Website Endpoint</strong> URL from the Properties pane and verify it loads your site in a browser.</span></li>
+        <li><span>(Optional) Create a CloudFront distribution pointing to the S3 website endpoint and configure a custom domain via Route 53 for production use.</span></li>
+      </ol>
+
+      <div class="callout warning">
+        <div class="callout-icon">⚠️</div>
+        <div class="callout-body">
+          <div class="callout-title">403 Forbidden After Enabling Hosting?</div>
+          <p class="callout-text">A 403 error after enabling static website hosting almost always means one of two things: (1) the Bucket Policy granting public read has not been applied yet, or (2) Block Public Access is still enabled. Check both settings — the bucket policy <em>alone</em> is insufficient if Block Public Access is still on. Both must be configured correctly in sequence.</p>
+        </div>
+      </div>
+
+      <h3>Static vs Dynamic — When to Use S3 Hosting</h3>
+      <div class="compare-grid">
+        <div class="compare-card success">
+          <h4>✅ Good Fit for S3 Static Hosting</h4>
+          <ul>
+            <li>Single-page applications (React, Vue, Angular built output)</li>
+            <li>Marketing landing pages and documentation sites</li>
+            <li>Pre-rendered content (Hugo, Jekyll, Next.js static export)</li>
+            <li>Developer portals and API reference docs</li>
+            <li>Error pages and maintenance splash pages</li>
+          </ul>
+        </div>
+        <div class="compare-card danger">
+          <h4>❌ Not Suitable for S3 Static Hosting</h4>
+          <ul>
+            <li>Server-side rendering (PHP, Node.js, Python backends)</li>
+            <li>Applications requiring authentication at the web server layer</li>
+            <li>Content requiring server-to-server API calls before response</li>
+            <li>WebSocket connections</li>
+            <li>Applications writing data back to the file system</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 07 ══════════════════════════════════════════════════ -->
+    <section id="versioning" class="page-section">
+      <div class="section-label">📍 Section 07</div>
+      <h2 class="section-heading">Object Versioning</h2>
+      <p class="section-intro">S3 Versioning maintains a complete history of every change to every object in a bucket. It is a critical safeguard against both accidental deletions and unintended overwrites.</p>
+
+      <h3>How Versioning Works</h3>
+      <p>Once versioning is enabled on a bucket, S3 assigns a unique <strong>Version ID</strong> to every object uploaded. Uploading an object with the same key as an existing object does not overwrite it — instead, S3 stores both versions, with the new upload becoming the current version.</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+    A([Upload config.yaml v1]) -->|Version: aB3xQr| B[(S3 Bucket<br/>config.yaml — v1)]
+    C([Upload config.yaml v2]) -->|Version: kL7mPz| D[(S3 Bucket<br/>config.yaml — v2<br/>config.yaml — v1)]
+    E([Delete config.yaml]) -->|Adds Delete Marker| F[(S3 Bucket<br/>config.yaml — DELETE MARKER<br/>config.yaml — v2<br/>config.yaml — v1)]
+    G([Restore: remove delete marker]) --> H[(config.yaml — v2 visible again)]
+        </div>
+        <p class="mermaid-caption">Figure 3 — Object versioning lifecycle: upload, overwrite, soft-delete via delete marker, and restore</p>
+      </div>
+
+      <h3>Key Versioning Behaviours</h3>
+      <ul class="bullet-list">
+        <li>Objects that existed <em>before</em> versioning was enabled receive a Version ID of <code>null</code></li>
+        <li>Suspending versioning does not delete existing versions — it only stops creating new ones</li>
+        <li>A regular DELETE on a versioned object creates a <strong>delete marker</strong> — the underlying versions are preserved</li>
+        <li>To permanently delete a specific version, you must DELETE the object <em>with the Version ID specified</em></li>
+        <li>MFA Delete can be enabled to require multi-factor authentication before permanently deleting object versions</li>
+      </ul>
+
+      <div class="compare-grid">
+        <div class="compare-card success">
+          <h4>✅ Benefits of Versioning</h4>
+          <ul>
+            <li>Protection against accidental overwrites and deletes</li>
+            <li>Enables point-in-time recovery for individual objects</li>
+            <li>Satisfies compliance requirements for immutable audit trails</li>
+            <li>Integrates with S3 Replication for cross-region or cross-account copies</li>
+            <li>Pairs with lifecycle policies to auto-expire old versions and control cost</li>
+          </ul>
+        </div>
+        <div class="compare-card danger">
+          <h4>⚠️ Cost Considerations</h4>
+          <ul>
+            <li>Each version counts toward storage billing — costs grow as versions accumulate</li>
+            <li>Large, frequently updated objects can accumulate significant version storage</li>
+            <li>Lifecycle rules should be configured to expire non-current versions after a retention period</li>
+            <li>Incomplete multi-part uploads also consume storage — enable AbortIncompleteMultipartUpload rules</li>
+          </ul>
+        </div>
+      </div>
+
+      <h4>Lifecycle Rule Example — Expire Old Versions</h4>
+      <pre><code>{
+  "Rules": [{
+    "ID": "expire-old-versions",
+    "Status": "Enabled",
+    "Filter": { "Prefix": "logs/" },
+    "NoncurrentVersionExpiration": {
+      "NoncurrentDays": 90
+    },
+    "AbortIncompleteMultipartUpload": {
+      "DaysAfterInitiation": 7
+    }
+  }]
+}</code></pre>
+
+      <div class="callout tip">
+        <div class="callout-icon">✅</div>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice — Version All Production Buckets</div>
+          <p class="callout-text">Enable versioning on every production bucket as a baseline control. Pair it with a lifecycle policy that expires non-current versions after your retention period (e.g., 90 days) to prevent unbounded storage cost growth. For critical data, also enable MFA Delete to protect against both accidental and malicious permanent deletions.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 08 ══════════════════════════════════════════════════ -->
+    <section id="architecture" class="page-section">
+      <div class="section-label">📍 Section 08</div>
+      <h2 class="section-heading">Architecture Diagrams</h2>
+      <p class="section-intro">These diagrams illustrate common real-world S3 deployment patterns — from a secure multi-tier web architecture to a tiered data lifecycle pipeline used for backup and archival.</p>
+
+      <h3>Diagram 1 — Secure Web Application with S3, CloudFront &amp; API Gateway</h3>
+      <div class="svg-wrap">
+        <svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:740px;">
+          <defs>
+            <linearGradient id="gCF" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1e3a5f"/><stop offset="100%" stop-color="#0d1e35"/>
+            </linearGradient>
+            <linearGradient id="gAPI" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#4c1d95"/><stop offset="100%" stop-color="#1e0a4a"/>
+            </linearGradient>
+            <linearGradient id="gLam" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#065f46"/><stop offset="100%" stop-color="#022c22"/>
+            </linearGradient>
+            <linearGradient id="gS3b" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#78350f"/><stop offset="100%" stop-color="#3a1a00"/>
+            </linearGradient>
+            <marker id="arrW" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+            </marker>
+          </defs>
+
+          <!-- User -->
+          <rect x="10" y="130" width="80" height="80" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+          <text x="50" y="165" text-anchor="middle" font-family="'Sora',sans-serif" font-size="22" fill="#94a3b8">🌍</text>
+          <text x="50" y="185" text-anchor="middle" font-family="'Sora',sans-serif" font-size="10" font-weight="600" fill="#94a3b8">Browser</text>
+          <text x="50" y="200" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">End User</text>
+
+          <!-- CloudFront -->
+          <rect x="130" y="100" width="130" height="140" rx="8" fill="url(#gCF)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="195" y="155" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#93c5fd">CloudFront</text>
+          <text x="195" y="172" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">CDN / WAF</text>
+          <text x="195" y="188" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#3b82f6">HTTPS Only</text>
+          <text x="195" y="204" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">OAC + TLS 1.3</text>
+          <text x="195" y="218" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">d3xkp2.cloudfront.net</text>
+
+          <!-- Arrows -->
+          <line x1="90" y1="170" x2="130" y2="170" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrW)" class="flow-line"/>
+
+          <!-- S3 Static Assets -->
+          <rect x="305" y="40" width="140" height="100" rx="8" fill="url(#gS3b)" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="375" y="82" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#fcd34d">S3 Bucket</text>
+          <text x="375" y="98" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#fde68a">Static Assets</text>
+          <text x="375" y="114" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#f59e0b">portal-assets-prod</text>
+          <text x="375" y="128" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#92400e">Private — OAC only</text>
+
+          <line x1="260" y1="140" x2="305" y2="90" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrW)" class="flow-line"/>
+          <text x="280" y="108" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#f59e0b">Static files</text>
+
+          <!-- API Gateway -->
+          <rect x="305" y="200" width="140" height="100" rx="8" fill="url(#gAPI)" stroke="#8b5cf6" stroke-width="1.5"/>
+          <text x="375" y="240" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#c4b5fd">API Gateway</text>
+          <text x="375" y="257" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#a78bfa">REST / HTTP API</text>
+          <text x="375" y="273" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#8b5cf6">api.myapp.example.com</text>
+          <text x="375" y="289" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#6d28d9">Auth: Cognito JWT</text>
+
+          <line x1="260" y1="200" x2="305" y2="250" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrW)" class="flow-line"/>
+          <text x="278" y="235" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#8b5cf6">API calls</text>
+
+          <!-- Lambda -->
+          <rect x="510" y="200" width="130" height="100" rx="8" fill="url(#gLam)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="575" y="240" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#34d399">Lambda</text>
+          <text x="575" y="257" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#6ee7b7">Business Logic</text>
+          <text x="575" y="273" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#10b981">api-handler-fn</text>
+          <text x="575" y="289" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#4ade80">Role: LambdaS3Access</text>
+
+          <line x1="445" y1="250" x2="510" y2="250" stroke="#10b981" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrW)" class="flow-line"/>
+
+          <!-- DynamoDB / Data Store -->
+          <rect x="510" y="40" width="130" height="100" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+          <text x="575" y="82" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#94a3b8">DynamoDB</text>
+          <text x="575" y="98" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">App Data</text>
+          <text x="575" y="114" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#475569">app-sessions-table</text>
+          <text x="575" y="128" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#334155">Encrypted at Rest</text>
+
+          <line x1="575" y1="200" x2="575" y2="140" stroke="#475569" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrW)" class="flow-line"/>
+
+          <!-- S3 Data (lambda writes) -->
+          <rect x="660" y="200" width="90" height="100" rx="8" fill="url(#gS3b)" stroke="#f97316" stroke-width="1.5"/>
+          <text x="705" y="240" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#fed7aa">S3 Bucket</text>
+          <text x="705" y="256" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#fde68a">User Uploads</text>
+          <text x="705" y="272" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#f97316">user-uploads-prod</text>
+          <text x="705" y="288" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#92400e">SSE-KMS</text>
+
+          <line x1="640" y1="250" x2="660" y2="250" stroke="#f97316" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrW)" class="flow-line"/>
+        </svg>
+        <p class="svg-caption">Figure 4 — Production web app architecture: CloudFront → S3 static assets + API Gateway → Lambda → DynamoDB / S3 data bucket</p>
+      </div>
+
+      <h3>Diagram 2 — S3 Data Lifecycle Pipeline (Hot → Warm → Cold)</h3>
+      <div class="svg-wrap">
+        <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:740px;">
+          <defs>
+            <linearGradient id="gHot" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#7f1d1d"/><stop offset="100%" stop-color="#450a0a"/>
+            </linearGradient>
+            <linearGradient id="gWarm" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1e3a5f"/><stop offset="100%" stop-color="#0d1e35"/>
+            </linearGradient>
+            <linearGradient id="gCold" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#0f2027"/><stop offset="100%" stop-color="#06111b"/>
+            </linearGradient>
+            <marker id="arrL" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#f59e0b"/>
+            </marker>
+          </defs>
+
+          <!-- Stage 1: Ingest -->
+          <rect x="10" y="60" width="100" height="80" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+          <text x="60" y="95" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#94a3b8">Data</text>
+          <text x="60" y="110" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#94a3b8">Ingestion</text>
+          <text x="60" y="126" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">S3 PUT / Kinesis</text>
+
+          <!-- Stage 2: Hot — S3 Standard -->
+          <rect x="145" y="40" width="130" height="120" rx="8" fill="url(#gHot)" stroke="#ef4444" stroke-width="1.5"/>
+          <text x="210" y="82" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#fca5a5">🔥 Hot</text>
+          <text x="210" y="98" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#fecaca">S3 Standard</text>
+          <text x="210" y="114" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#ef4444">0–30 days</text>
+          <text x="210" y="130" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#f87171">Frequent access</text>
+          <text x="210" y="145" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">$$$ /GB</text>
+
+          <!-- Stage 3: Warm — S3 Standard-IA -->
+          <rect x="310" y="40" width="130" height="120" rx="8" fill="url(#gWarm)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="375" y="82" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#93c5fd">🌡️ Warm</text>
+          <text x="375" y="98" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#bfdbfe">S3 Standard-IA</text>
+          <text x="375" y="114" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#3b82f6">30–90 days</text>
+          <text x="375" y="130" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#60a5fa">Infrequent access</text>
+          <text x="375" y="145" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">$$ /GB</text>
+
+          <!-- Stage 4: Cold — Glacier -->
+          <rect x="475" y="40" width="130" height="120" rx="8" fill="url(#gCold)" stroke="#475569" stroke-width="1.5"/>
+          <text x="540" y="82" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#94a3b8">❄️ Cold</text>
+          <text x="540" y="98" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">S3 Glacier IR</text>
+          <text x="540" y="114" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#475569">90 days+</text>
+          <text x="540" y="130" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">Archive / DR</text>
+          <text x="540" y="145" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">$ /GB</text>
+
+          <!-- Stage 5: Deep Archive -->
+          <rect x="635" y="40" width="115" height="120" rx="8" fill="#0a0f1a" stroke="#334155" stroke-width="1.5"/>
+          <text x="692" y="82" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#475569">🧊 Deep</text>
+          <text x="692" y="98" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#334155">Glacier DA</text>
+          <text x="692" y="114" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#1e293b">180 days+</text>
+          <text x="692" y="130" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#334155">Compliance vault</text>
+          <text x="692" y="145" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#1e293b">¢ /GB</text>
+
+          <!-- Arrows -->
+          <line x1="110" y1="100" x2="145" y2="100" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrL)" class="flow-line"/>
+          <line x1="275" y1="100" x2="310" y2="100" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrL)" class="flow-line"/>
+          <text x="292" y="92" text-anchor="middle" font-family="'Inter',sans-serif" font-size="8" fill="#f59e0b">30d lifecycle</text>
+          <line x1="440" y1="100" x2="475" y2="100" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrL)" class="flow-line"/>
+          <text x="457" y="92" text-anchor="middle" font-family="'Inter',sans-serif" font-size="8" fill="#f59e0b">90d lifecycle</text>
+          <line x1="605" y1="100" x2="635" y2="100" stroke="#475569" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrL)" class="flow-line"/>
+          <text x="620" y="92" text-anchor="middle" font-family="'Inter',sans-serif" font-size="8" fill="#475569">180d policy</text>
+
+          <!-- Timeline bar -->
+          <rect x="10" y="175" width="625" height="5" rx="3" fill="url(#gHot)"/>
+          <rect x="310" y="175" width="325" height="5" rx="3" fill="url(#gWarm)"/>
+          <rect x="475" y="175" width="160" height="5" rx="3" fill="url(#gCold)"/>
+          <text x="10"  y="195" font-family="'Inter',sans-serif" font-size="9" fill="#ef4444">Day 0</text>
+          <text x="270" y="195" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#3b82f6">Day 30</text>
+          <text x="475" y="195" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">Day 90</text>
+          <text x="635" y="195" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#334155">Day 180+</text>
+        </svg>
+        <p class="svg-caption">Figure 5 — S3 storage class lifecycle pipeline: Hot (Standard) → Warm (Standard-IA) → Cold (Glacier) → Deep Archive driven by lifecycle rules</p>
+      </div>
+
+      <h3>Storage Class Comparison</h3>
+      <table>
+        <thead><tr><th>Storage Class</th><th>Min Duration</th><th>Retrieval Time</th><th>Use Case</th><th>Relative Cost</th></tr></thead>
+        <tbody>
+          <tr><td>S3 Standard</td><td>None</td><td>Milliseconds</td><td>Active, frequently accessed data</td><td>Highest</td></tr>
+          <tr><td>S3 Intelligent-Tiering</td><td>None</td><td>Milliseconds</td><td>Unknown or changing access patterns</td><td>Monitoring fee added</td></tr>
+          <tr><td>S3 Standard-IA</td><td>30 days</td><td>Milliseconds</td><td>Backups, DR copies, infrequent reads</td><td>Lower storage, retrieval fee</td></tr>
+          <tr><td>S3 One Zone-IA</td><td>30 days</td><td>Milliseconds</td><td>Non-critical, reproducible data</td><td>20% below Standard-IA</td></tr>
+          <tr><td>S3 Glacier Instant</td><td>90 days</td><td>Milliseconds</td><td>Archive with occasional immediate access</td><td>Low</td></tr>
+          <tr><td>S3 Glacier Flexible</td><td>90 days</td><td>Minutes–hours</td><td>Compliance archives, long-term backups</td><td>Very low</td></tr>
+          <tr><td>S3 Glacier Deep Archive</td><td>180 days</td><td>12–48 hours</td><td>7-year regulatory retention, rarely accessed</td><td>Lowest</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 09 ══════════════════════════════════════════════════ -->
+    <section id="interview" class="page-section">
+      <div class="section-label">📍 Section 09</div>
+      <h2 class="section-heading">Interview Q&amp;A — Scenario-Based</h2>
+      <p class="section-intro">These questions reflect common patterns in cloud architect, DevOps engineer, and solutions architect interviews, as well as AWS certification exams.</p>
+
+      <div class="qa-list">
+
+        <div class="qa-item">
+          <div class="qa-q">A development team accidentally deleted a critical configuration file from an S3 bucket. The file is not recoverable from any other source. How should the architecture have been designed to prevent this?</div>
+          <p class="qa-a">The bucket should have had <strong>versioning enabled</strong>. With versioning active, deleting an object only creates a delete marker — the underlying data versions are retained. The deleted file could be recovered by either removing the delete marker or restoring the desired version. As an additional control, <strong>MFA Delete</strong> should be enabled on critical buckets to require a second factor before permanently removing any object version.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">An EC2 application needs read access to a private S3 bucket. A junior engineer suggests creating an IAM user and embedding the access keys in the application's environment file. Why is this problematic, and what is the correct approach?</div>
+          <p class="qa-a">Embedding static IAM user credentials in an environment file or application code is a significant security risk. If the file is committed to a code repository, exposed in logs, or accessed by an attacker, the credentials provide permanent access until manually rotated. The correct approach is to create an <strong>IAM Role</strong> and attach it to the EC2 instance as an <strong>instance profile</strong>. The application then retrieves temporary credentials automatically through the EC2 Instance Metadata Service (IMDS) — no keys need to be stored anywhere, and credentials are automatically rotated every few hours.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">A company hosts a React-based single-page application in S3 and distributes it via CloudFront. After deploying a new build, some users continue to see the old version. What is the root cause and how is it resolved?</div>
+          <p class="qa-a">The root cause is <strong>CloudFront edge cache</strong> serving the previously cached version of <code>index.html</code> and JS/CSS bundles. CloudFront does not automatically detect S3 object changes — it serves cached copies until the TTL expires. The resolution is to create a <strong>CloudFront invalidation</strong> for the affected paths (e.g., <code>/*</code> or <code>/index.html</code>) after each deployment. A more robust strategy is to use <strong>content-hashed filenames</strong> for JS/CSS assets so new files have new keys, while only <code>index.html</code> (with a short TTL) requires invalidation.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">Your organisation has regulatory requirements to retain audit logs for 7 years. The logs are accessed only within the first 30 days after creation and never accessed thereafter. Design a cost-optimal S3 storage strategy.</div>
+          <p class="qa-a">Use an <strong>S3 lifecycle policy</strong> with the following tiers: store logs in <strong>S3 Standard</strong> for the first 30 days (active access period). Transition to <strong>S3 Standard-IA</strong> at day 30 (occasional retrieval, lower cost). Transition to <strong>S3 Glacier Deep Archive</strong> at day 90 (long-term retention, very rare access, lowest possible cost). This combination satisfies the 7-year retention requirement while reducing storage costs by 90%+ compared to keeping everything in Standard. Additionally, enable <strong>S3 Object Lock</strong> in compliance mode to prevent any modification or deletion during the retention period, satisfying immutability requirements.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">A bucket policy grants <code>s3:GetObject</code> to <code>"Principal": "*"</code>, but users are still receiving 403 errors when accessing objects via the public URL. What should you check first?</div>
+          <p class="qa-a">The first thing to verify is the <strong>Block Public Access</strong> setting at the bucket level. Even with a bucket policy that explicitly grants public access, if any of the four Block Public Access settings are enabled, AWS will override the policy and deny all public requests. Disable "Block all public access" (or the specific relevant setting) at the bucket level, acknowledge the security warning, and then verify that the bucket policy is correctly formed — specifically that the Resource ARN ends with <code>/*</code> (objects) not just the bucket ARN (which would only apply to <code>s3:ListBucket</code>).</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">Explain the difference between a pre-signed URL and a public S3 object URL. When would you use each?</div>
+          <p class="qa-a">A <strong>public object URL</strong> (e.g., <code>https://bucket.s3.region.amazonaws.com/file.pdf</code>) is accessible by anyone without authentication, provided the bucket policy grants <code>GetObject</code> to <code>"Principal": "*"</code>. Use this for truly public content such as a website's static assets. A <strong>pre-signed URL</strong> embeds time-limited, cryptographically signed credentials from the generating IAM principal into the URL itself. It allows a specific object to be accessed without making the bucket public, and the URL expires after a configurable duration (default 15 minutes, up to 7 days with SigV4). Use pre-signed URLs for private file downloads, secure form uploads, or sharing a specific resource temporarily without changing bucket permissions.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ ABOUT ══════════════════════════════════════════════════════ -->
+    <section id="about" class="page-section">
+      <div class="author-section">
+        <div class="author-header">
+          <div class="author-avatar">🛡️</div>
+          <div class="author-meta">
+            <h3>Mohammed Abdul</h3>
+            <div class="role">Data Protection Architect · Cloud Storage Specialist</div>
+            <p>Mohammed Abdul is a Data Protection Architect with more than 10 years of experience in Hybrid Cloud and has worked with global clients across various industries. With extensive expertise in enterprise backup and recovery solutions, Mohammed specialises in AWS, Azure, GCP, Commvault, Veeam, NetBackup, and NetApp technologies, helping organisations design and implement robust data protection strategies.</p>
+          </div>
+        </div>
+        <div class="tech-badges">
+          <span class="tech-badge">☁️ AWS</span>
+          <span class="tech-badge">🔵 Azure</span>
+          <span class="tech-badge">🟢 GCP</span>
+          <span class="tech-badge">🔶 Commvault</span>
+          <span class="tech-badge">🟢 Veeam</span>
+          <span class="tech-badge">🔷 NetBackup</span>
+          <span class="tech-badge">🟠 NetApp</span>
+          <span class="tech-badge">🏗️ Hybrid Cloud Architecture</span>
+          <span class="tech-badge">🔐 Data Protection</span>
+        </div>
+        <div>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:4px;">For queries and collaboration:</p>
+          <a class="email-card" href="mailto:abdul.md.20000102@gmail.com">
+            ✉️ &nbsp; abdul.md.20000102@gmail.com
+          </a>
+        </div>
+        <div class="disclaimer-box">
+          <strong>Disclaimer:</strong> This content is produced for educational purposes and tutorial material. All architecture examples, IP addresses, hostnames, and identifiers used in diagrams are illustrative and do not represent real infrastructure. Always refer to official AWS documentation and follow your organisation's security and compliance procedures for production implementations.
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /content-wrap -->
+</main>
+
+<script>
+  // Reading progress bar
+  window.addEventListener('scroll', () => {
+    const scrollTop = document.documentElement.scrollTop;
+    const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    document.getElementById('progress-bar').style.transform = `scaleX(${scrollTop / scrollHeight})`;
+  });
+
+  // Active TOC link via IntersectionObserver
+  const sections = document.querySelectorAll('.page-section');
+  const tocLinks = document.querySelectorAll('.toc-list li a');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.getAttribute('id');
+        tocLinks.forEach(link => {
+          link.classList.toggle('active', link.getAttribute('href') === `#${id}`);
+        });
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => observer.observe(s));
+
+  // Init Mermaid
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#1e4080',
+      primaryTextColor: '#86efac',
+      primaryBorderColor: '#60a5fa',
+      lineColor: '#94a3b8',
+      secondaryColor: '#0d1e35',
+      tertiaryColor: '#162d4a',
+      background: '#161b22',
+      mainBkg: '#1e4080',
+      nodeBorder: '#60a5fa',
+      clusterBkg: '#0d1e35',
+      clusterBorder: '#3b82f6',
+      titleColor: '#86efac',
+      edgeLabelBackground: '#162d4a'
+    },
+    flowchart: { htmlLabels: true, curve: 'basis' }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS S3 Deep Dive — Versioning, Replication & Storage Tiers | Cloud Tutorial</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-card: #1c2230;
+    --bg-sidebar: #111827;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border-color: #2d3748;
+    --border-bright: #374151;
+    --sidebar-width: 280px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    display: flex;
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  /* ── Sidebar ─────────────── */
+  .sidebar {
+    width: var(--sidebar-width);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    overflow-y: auto;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar-logo {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .sidebar-logo .brand {
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-cyan);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .sidebar-logo .subtitle { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .toc-title {
+    padding: 16px 20px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .toc-list { list-style: none; padding: 0 8px 20px; }
+  .toc-list li a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    transition: all 0.2s;
+  }
+  .toc-list li a:hover { background: rgba(59,130,246,0.12); color: var(--accent-blue); }
+  .toc-list li a .icon { font-size: 14px; width: 18px; flex-shrink: 0; }
+  .toc-list li a .num {
+    font-size: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--text-muted);
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .toc-divider { height: 1px; background: var(--border-color); margin: 8px 20px; }
+
+  /* ── Main Content ─────────── */
+  .main-content { margin-left: var(--sidebar-width); flex: 1; min-height: 100vh; }
+
+  .page-header {
+    background: linear-gradient(135deg, #0f1f3d 0%, #0d1a2e 50%, #081525 100%);
+    border-bottom: 1px solid var(--border-color);
+    padding: 56px 60px 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  .page-header::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(59,130,246,0.15);
+    border: 1px solid rgba(59,130,246,0.3);
+    color: var(--accent-blue);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 20px;
+  }
+  .page-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 36px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+  .page-title span { color: var(--accent-cyan); }
+  .page-subtitle {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 620px;
+    margin-bottom: 28px;
+  }
+  .header-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+  .tag-blue { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+  .tag-cyan { background: rgba(6,182,212,0.12); color: #22d3ee; border: 1px solid rgba(6,182,212,0.25); }
+  .tag-green { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+  .tag-amber { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+  .tag-purple { background: rgba(139,92,246,0.12); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.25); }
+
+  .content-wrap { max-width: 900px; padding: 48px 60px 80px; }
+
+  .section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(6,182,212,0.08);
+    border: 1px solid rgba(6,182,212,0.2);
+    color: var(--accent-cyan);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  h2.section-heading {
+    font-family: 'Sora', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+    padding-top: 4px;
+  }
+  .section-intro { color: var(--text-secondary); font-size: 15px; margin-bottom: 28px; max-width: 700px; }
+  h3 { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 600; color: #e2e8f0; margin: 28px 0 12px; }
+  h4 { font-family: 'Sora', sans-serif; font-size: 15px; font-weight: 600; color: #cbd5e1; margin: 20px 0 8px; }
+  p { margin-bottom: 14px; color: var(--text-secondary); }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; margin: 20px 0 28px; }
+  .product-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .product-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+  .product-card.blue::before { background: var(--accent-blue); }
+  .product-card.cyan::before { background: var(--accent-cyan); }
+  .product-card.green::before { background: var(--accent-green); }
+  .product-card.amber::before { background: var(--accent-amber); }
+  .product-card.purple::before { background: var(--accent-purple); }
+  .product-card.red::before { background: var(--accent-red); }
+  .product-card:hover { border-color: var(--border-bright); transform: translateY(-2px); }
+  .product-card .pname { font-family: 'Sora', sans-serif; font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .product-card .pfull { font-size: 11px; color: var(--text-muted); font-style: italic; margin-bottom: 10px; }
+  .product-card .pdesc { font-size: 13px; color: var(--text-secondary); margin: 0; }
+
+  /* Callouts */
+  .callout { border-radius: 8px; padding: 16px 20px; margin: 20px 0; display: flex; gap: 14px; }
+  .callout-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .callout-body { flex: 1; }
+  .callout-title { font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+  .callout-text { font-size: 13.5px; margin: 0; line-height: 1.6; }
+  .callout.tip { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25); }
+  .callout.tip .callout-title { color: #34d399; }
+  .callout.tip .callout-text { color: #a7f3d0; }
+  .callout.warning { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); }
+  .callout.warning .callout-title { color: #fcd34d; }
+  .callout.warning .callout-text { color: #fde68a; }
+  .callout.info { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); }
+  .callout.info .callout-title { color: #93c5fd; }
+  .callout.info .callout-text { color: #bfdbfe; }
+  .callout.exam { background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.25); }
+  .callout.exam .callout-title { color: #c4b5fd; }
+  .callout.exam .callout-text { color: #ddd6fe; }
+  .callout.note { background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2); }
+  .callout.note .callout-title { color: #67e8f9; }
+  .callout.note .callout-text { color: #cffafe; }
+
+  /* Code */
+  pre, code { font-family: 'JetBrains Mono', monospace; }
+  pre {
+    background: #0a0f1a;
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--accent-blue);
+    border-radius: 6px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    font-size: 13px;
+    color: #a5d8ff;
+    margin: 14px 0;
+    line-height: 1.6;
+  }
+  code { background: rgba(59,130,246,0.1); color: #93c5fd; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  pre code { background: none; color: inherit; padding: 0; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 14px; }
+  thead th {
+    background: var(--bg-secondary);
+    color: var(--accent-cyan);
+    font-family: 'Sora', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 12px 16px;
+    border-bottom: 2px solid var(--border-color);
+    text-align: left;
+  }
+  tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); vertical-align: top; }
+  tbody tr:hover td { background: rgba(59,130,246,0.04); }
+  tbody td:first-child { color: #e2e8f0; font-weight: 500; }
+
+  .section-sep { border: none; border-top: 1px solid var(--border-color); margin: 52px 0 44px; }
+
+  /* Steps */
+  .steps-list { counter-reset: step-counter; list-style: none; margin: 16px 0; }
+  .steps-list li { counter-increment: step-counter; display: flex; gap: 14px; margin-bottom: 14px; align-items: flex-start; }
+  .steps-list li::before {
+    content: counter(step-counter);
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .steps-list li span { font-size: 14px; color: var(--text-secondary); }
+
+  /* SVG diagram wrapper */
+  .diagram-wrap {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 20px 0;
+    overflow-x: auto;
+  }
+  .diagram-caption { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+
+  /* Compare grid */
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .compare-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
+  .compare-card.success { border-color: rgba(16,185,129,0.3); }
+  .compare-card.danger { border-color: rgba(239,68,68,0.3); }
+  .compare-card ul { list-style: none; margin-top: 10px; }
+  .compare-card ul li { font-size: 13.5px; color: var(--text-secondary); padding: 5px 0; border-bottom: 1px solid var(--border-color); display: flex; align-items: flex-start; gap: 8px; }
+  .compare-card ul li:last-child { border-bottom: none; }
+  .compare-card.success ul li::before { content: '✓'; color: var(--accent-green); }
+  .compare-card.danger ul li::before { content: '✗'; color: var(--accent-red); }
+
+  /* Q&A Interview */
+  .qa-item { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px 24px; margin-bottom: 16px; }
+  .qa-q { font-weight: 600; color: var(--accent-cyan); margin-bottom: 10px; font-size: 14.5px; display: flex; gap: 10px; }
+  .qa-q::before { content: 'Q'; background: rgba(6,182,212,0.2); color: var(--accent-cyan); font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 3px; flex-shrink: 0; margin-top: 2px; }
+  .qa-a { color: var(--text-secondary); font-size: 14px; line-height: 1.7; display: flex; gap: 10px; }
+  .qa-a::before { content: 'A'; background: rgba(16,185,129,0.2); color: #34d399; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 3px; flex-shrink: 0; margin-top: 2px; }
+
+  /* Author card */
+  .author-card {
+    background: linear-gradient(135deg, #1c2230 0%, #1a2540 100%);
+    border: 1px solid rgba(59,130,246,0.3);
+    border-radius: 12px;
+    padding: 32px;
+    margin-top: 48px;
+  }
+  .author-top { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px; }
+  .author-avatar {
+    width: 64px; height: 64px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; font-weight: 700; color: #fff;
+    flex-shrink: 0;
+    font-family: 'Sora', sans-serif;
+  }
+  .author-name { font-family: 'Sora', sans-serif; font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .author-role { font-size: 13px; color: var(--accent-cyan); margin-bottom: 8px; }
+  .author-bio { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+  .tech-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+  .tech-badge { background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.25); color: #93c5fd; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+  .contact-link {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3);
+    color: #34d399; padding: 10px 18px; border-radius: 8px;
+    text-decoration: none; font-size: 13px; font-weight: 500;
+    transition: background 0.2s;
+  }
+  .contact-link:hover { background: rgba(16,185,129,0.18); }
+
+  /* Bullet list helper */
+  .bullet-list { list-style: none; margin: 12px 0 20px; }
+  .bullet-list li { font-size: 14px; color: var(--text-secondary); padding: 5px 0 5px 22px; position: relative; border-bottom: 1px solid rgba(45,55,72,0.5); }
+  .bullet-list li:last-child { border-bottom: none; }
+  .bullet-list li::before { content: '▸'; position: absolute; left: 0; color: var(--accent-cyan); font-size: 11px; top: 7px; }
+
+  /* Tier pill */
+  .tier-pill { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-right: 6px; }
+  .tier-hot { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+  .tier-warm { background: rgba(245,158,11,0.15); color: #fcd34d; border: 1px solid rgba(245,158,11,0.3); }
+  .tier-cold { background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+  .tier-ice { background: rgba(139,92,246,0.15); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.3); }
+
+  /* SVG animation */
+  @keyframes dashMove {
+    to { stroke-dashoffset: -20; }
+  }
+  .animated-dash { animation: dashMove 1.2s linear infinite; }
+
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main-content { margin-left: 0; }
+    .content-wrap { padding: 24px 20px 60px; }
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar TOC ─────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="brand">☁️ Cloud Storage</div>
+    <div class="subtitle">AWS S3 Deep Dive — Tutorial</div>
+  </div>
+  <div class="toc-title">Table of Contents</div>
+  <ul class="toc-list">
+    <li><a href="#overview"><span class="icon">🏠</span> Overview <span class="num">01</span></a></li>
+    <li><a href="#versioning"><span class="icon">🔁</span> Object Versioning <span class="num">02</span></a></li>
+    <li><a href="#versioning-workflow"><span class="icon">🗂️</span> Versioning Workflow <span class="num">03</span></a></li>
+    <li><a href="#replication"><span class="icon">🌐</span> S3 Replication <span class="num">04</span></a></li>
+    <li><a href="#replication-arch"><span class="icon">🏗️</span> Replication Architecture <span class="num">05</span></a></li>
+    <li><a href="#replication-notes"><span class="icon">📋</span> Replication Rules & Notes <span class="num">06</span></a></li>
+    <li><div class="toc-divider"></div></li>
+    <li><a href="#storage-classes"><span class="icon">💾</span> Storage Classes <span class="num">07</span></a></li>
+    <li><a href="#tiers-diagram"><span class="icon">📊</span> Tier Lifecycle Diagram <span class="num">08</span></a></li>
+    <li><a href="#lifecycle"><span class="icon">⚙️</span> Lifecycle Automation <span class="num">09</span></a></li>
+    <li><a href="#express-one-zone"><span class="icon">⚡</span> Express One Zone <span class="num">10</span></a></li>
+    <li><div class="toc-divider"></div></li>
+    <li><a href="#interview"><span class="icon">🎯</span> Interview Q&amp;A <span class="num">11</span></a></li>
+    <li><a href="#author"><span class="icon">👤</span> About the Author <span class="num">12</span></a></li>
+  </ul>
+</aside>
+
+<!-- ── Main Content ─────────────────────────────────────── -->
+<div class="main-content">
+
+<!-- Header -->
+<div class="page-header">
+  <div class="header-badge">☁️ AWS Cloud Storage Tutorial</div>
+  <h1 class="page-title">Amazon S3 — <span>Versioning, Replication</span><br>&amp; Storage Tiers</h1>
+  <p class="page-subtitle">A comprehensive hands-on guide to managing object lifecycle, cross-region data redundancy, and cost-optimized storage tiering in AWS S3.</p>
+  <div class="header-tags">
+    <span class="tag tag-blue">S3 Versioning</span>
+    <span class="tag tag-cyan">Cross-Region Replication</span>
+    <span class="tag tag-green">Storage Classes</span>
+    <span class="tag tag-amber">Lifecycle Policies</span>
+    <span class="tag tag-purple">Express One Zone</span>
+  </div>
+</div>
+
+<div class="content-wrap">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 1: OVERVIEW -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="overview">
+  <div class="section-label">📌 Introduction</div>
+  <h2 class="section-heading">Why Object Storage Resilience Matters</h2>
+  <p class="section-intro">Amazon S3 is far more than a simple file store. Its built-in capabilities for versioning, cross-region replication, and intelligent storage tiering allow architects to build highly resilient, cost-efficient data platforms without managing physical infrastructure.</p>
+
+  <div class="product-grid">
+    <div class="product-card blue">
+      <div class="pname">🔁 Versioning</div>
+      <div class="pfull">Object version history</div>
+      <p class="pdesc">Retain every mutation of an object. Accidentally overwritten files can be restored in seconds using version IDs.</p>
+    </div>
+    <div class="product-card cyan">
+      <div class="pname">🌐 Replication</div>
+      <div class="pfull">CRR &amp; SRR</div>
+      <p class="pdesc">Automatically copy objects across AWS regions or within the same region for compliance and low-latency access.</p>
+    </div>
+    <div class="product-card green">
+      <div class="pname">💾 Storage Tiers</div>
+      <div class="pfull">7 storage classes</div>
+      <p class="pdesc">Match the right price-performance tier to every data access pattern — from millisecond retrieval to deep archive.</p>
+    </div>
+    <div class="product-card amber">
+      <div class="pname">⚙️ Lifecycle Rules</div>
+      <div class="pfull">Automated transitions</div>
+      <p class="pdesc">Define time-based policies that automatically move objects to cheaper tiers as they age, reducing cost without manual effort.</p>
+    </div>
+    <div class="product-card purple">
+      <div class="pname">⚡ Express One Zone</div>
+      <div class="pfull">Ultra-low latency</div>
+      <p class="pdesc">Single-AZ directory buckets optimised for high-throughput workloads — 10× faster than S3 Standard at half the cost.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 2: VERSIONING -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="versioning">
+  <div class="section-label">🔁 Core Concept</div>
+  <h2 class="section-heading">Object Versioning in Amazon S3</h2>
+  <p class="section-intro">S3 versioning provides a built-in safety net by preserving every iteration of an object stored in a bucket. When versioning is active, overwriting an object does not erase the previous copy — it stacks a new version on top. This makes accidental overwrites, deletions, and ransomware-style attacks fully recoverable.</p>
+
+  <h3>How Versioning Works</h3>
+  <p>Once you enable versioning on a bucket, every <code>PUT</code> operation that targets an existing object key creates a new version ID. Objects uploaded <em>before</em> versioning was enabled receive a version ID of <code>null</code>. Objects uploaded after enabling versioning carry a unique alphanumeric version ID.</p>
+
+  <div class="callout tip">
+    <div class="callout-icon">✅</div>
+    <div class="callout-body">
+      <div class="callout-title">Best Practice</div>
+      <p class="callout-text">Enable versioning on buckets that store business-critical data, configuration files, or static website assets. The storage cost overhead is minimal compared to the recovery insurance it provides. Pair versioning with lifecycle rules to auto-expire non-current versions after a retention window.</p>
+    </div>
+  </div>
+
+  <h3>Delete Markers vs Permanent Deletes</h3>
+  <p>Versioning introduces a nuanced delete model. Understanding the difference is critical for designing a reliable recovery strategy.</p>
+
+  <div class="compare-grid">
+    <div class="compare-card success">
+      <h4 style="color:#34d399">🗑️ Soft Delete (Delete Marker)</h4>
+      <ul>
+        <li>Triggered by deleting an object without specifying a version ID</li>
+        <li>AWS places a <em>delete marker</em> as the latest version</li>
+        <li>Underlying versions remain intact in the bucket</li>
+        <li>Object appears deleted when listing the bucket</li>
+        <li>Fully reversible — remove the delete marker to restore</li>
+      </ul>
+    </div>
+    <div class="compare-card danger">
+      <h4 style="color:#fca5a5">❌ Permanent Delete</h4>
+      <ul>
+        <li>Triggered by deleting an object with a specific version ID</li>
+        <li>That particular version is erased permanently</li>
+        <li>Cannot be undone — no recovery path</li>
+        <li>Other versions of the same key remain unaffected</li>
+        <li>Use with caution; typically requires elevated IAM permissions</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout warning">
+    <div class="callout-icon">⚠️</div>
+    <div class="callout-body">
+      <div class="callout-title">Critical Warning</div>
+      <p class="callout-text">Permanent deletion by version ID is irreversible. Restrict the <code>s3:DeleteObjectVersion</code> IAM action to a small set of privileged roles. Consider enabling S3 Object Lock with MFA Delete on compliance-sensitive buckets to add an additional approval gate before any version can be erased.</p>
+    </div>
+  </div>
+
+  <h3>Restoring a Previous Version</h3>
+  <p>To roll back to an earlier state, you have two paths:</p>
+  <ul class="steps-list">
+    <li><span><strong>Remove the delete marker</strong> — when an object was soft-deleted, identify the delete marker version ID in the bucket listing (with "Show versions" enabled) and permanently delete the marker itself. The previous version automatically becomes the current, active version.</span></li>
+    <li><span><strong>Delete a newer version</strong> — when an object was overwritten and you need to revert, permanently delete the unwanted version ID. The next-most-recent version becomes current.</span></li>
+    <li><span><strong>Copy an old version</strong> — copy a specific version to the same key via the AWS Console, CLI, or SDK. This creates a new version identical to the historical one without discarding any intermediate versions.</span></li>
+  </ul>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 3: VERSIONING WORKFLOW DIAGRAM -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="versioning-workflow">
+  <div class="section-label">🗂️ Visual Diagram</div>
+  <h2 class="section-heading">Versioning State Machine</h2>
+  <p class="section-intro">The diagram below illustrates how object states evolve in a versioning-enabled bucket through uploads, overwrites, soft deletes, and restorations.</p>
+
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 820 360" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:820px;display:block;margin:0 auto;">
+      <defs>
+        <linearGradient id="gradBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#1e3a5f"/>
+          <stop offset="100%" style="stop-color:#1e4080"/>
+        </linearGradient>
+        <linearGradient id="gradGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#064e3b"/>
+          <stop offset="100%" style="stop-color:#065f46"/>
+        </linearGradient>
+        <linearGradient id="gradAmber" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#78350f"/>
+          <stop offset="100%" style="stop-color:#92400e"/>
+        </linearGradient>
+        <linearGradient id="gradRed" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#7f1d1d"/>
+          <stop offset="100%" style="stop-color:#991b1b"/>
+        </linearGradient>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#60a5fa"/>
+        </marker>
+        <marker id="arrowGreen" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#34d399"/>
+        </marker>
+        <marker id="arrowAmber" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#fcd34d"/>
+        </marker>
+        <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#fca5a5"/>
+        </marker>
+      </defs>
+
+      <!-- Node: Initial Upload -->
+      <rect x="20" y="140" width="140" height="60" rx="8" fill="url(#gradBlue)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="90" y="166" text-anchor="middle" fill="#93c5fd" font-size="12" font-family="Inter,sans-serif" font-weight="600">Initial Upload</text>
+      <text x="90" y="183" text-anchor="middle" fill="#60a5fa" font-size="10" font-family="JetBrains Mono,monospace">version: null</text>
+
+      <!-- Arrow to Active -->
+      <line x1="160" y1="170" x2="215" y2="170" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+      <!-- Node: Active Version -->
+      <rect x="215" y="130" width="150" height="80" rx="8" fill="url(#gradGreen)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="290" y="162" text-anchor="middle" fill="#6ee7b7" font-size="12" font-family="Inter,sans-serif" font-weight="600">Active Version</text>
+      <text x="290" y="179" text-anchor="middle" fill="#34d399" font-size="10" font-family="JetBrains Mono,monospace">version: GBk5Xa...</text>
+      <text x="290" y="195" text-anchor="middle" fill="#a7f3d0" font-size="10" font-family="Inter,sans-serif">Visible to clients</text>
+
+      <!-- Arrow Overwrite -->
+      <path d="M 365 155 Q 440 80 510 130" stroke="#60a5fa" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arrow)" class="animated-dash"/>
+      <text x="435" y="92" text-anchor="middle" fill="#93c5fd" font-size="11" font-family="Inter,sans-serif">Overwrite (PUT)</text>
+
+      <!-- Node: New Version -->
+      <rect x="510" y="115" width="150" height="80" rx="8" fill="url(#gradGreen)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="585" y="147" text-anchor="middle" fill="#6ee7b7" font-size="12" font-family="Inter,sans-serif" font-weight="600">New Version</text>
+      <text x="585" y="164" text-anchor="middle" fill="#34d399" font-size="10" font-family="JetBrains Mono,monospace">version: DK2mYp...</text>
+      <text x="585" y="181" text-anchor="middle" fill="#a7f3d0" font-size="10" font-family="Inter,sans-serif">Latest → Current</text>
+
+      <!-- Arrow Soft Delete -->
+      <line x1="585" y1="195" x2="585" y2="240" stroke="#fcd34d" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowAmber)"/>
+      <text x="620" y="225" text-anchor="start" fill="#fcd34d" font-size="10" font-family="Inter,sans-serif">DELETE</text>
+      <text x="620" y="238" text-anchor="start" fill="#fcd34d" font-size="10" font-family="Inter,sans-serif">(no version ID)</text>
+
+      <!-- Node: Delete Marker -->
+      <rect x="510" y="245" width="150" height="65" rx="8" fill="url(#gradAmber)" stroke="#fcd34d" stroke-width="1.5"/>
+      <text x="585" y="270" text-anchor="middle" fill="#fde68a" font-size="12" font-family="Inter,sans-serif" font-weight="600">Delete Marker</text>
+      <text x="585" y="287" text-anchor="middle" fill="#fcd34d" font-size="10" font-family="JetBrains Mono,monospace">Soft deleted</text>
+      <text x="585" y="301" text-anchor="middle" fill="#fde68a" font-size="10" font-family="Inter,sans-serif">404 to clients</text>
+
+      <!-- Restore arrow (back up) -->
+      <path d="M 510 277 Q 450 310 420 275 Q 390 240 440 220" stroke="#34d399" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#arrowGreen)"/>
+      <text x="380" y="260" text-anchor="middle" fill="#34d399" font-size="10" font-family="Inter,sans-serif">Remove</text>
+      <text x="380" y="273" text-anchor="middle" fill="#34d399" font-size="10" font-family="Inter,sans-serif">delete marker</text>
+
+      <!-- Arrow Permanent Delete -->
+      <line x1="660" y1="155" x2="720" y2="155" stroke="#fca5a5" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowRed)"/>
+
+      <!-- Node: Permanent Delete -->
+      <rect x="720" y="130" width="90" height="60" rx="8" fill="url(#gradRed)" stroke="#fca5a5" stroke-width="1.5"/>
+      <text x="765" y="156" text-anchor="middle" fill="#fca5a5" font-size="11" font-family="Inter,sans-serif" font-weight="600">Permanent</text>
+      <text x="765" y="171" text-anchor="middle" fill="#fca5a5" font-size="11" font-family="Inter,sans-serif" font-weight="600">Delete</text>
+      <text x="720" y="120" text-anchor="start" fill="#f87171" font-size="10" font-family="Inter,sans-serif">DELETE (version ID) — irreversible</text>
+
+      <!-- Key -->
+      <rect x="20" y="275" width="200" height="70" rx="6" fill="#161b22" stroke="#2d3748" stroke-width="1"/>
+      <text x="30" y="294" fill="#94a3b8" font-size="10" font-family="Inter,sans-serif" font-weight="600">LEGEND</text>
+      <line x1="30" y1="305" x2="55" y2="305" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="60" y="309" fill="#94a3b8" font-size="10" font-family="Inter,sans-serif">Normal flow</text>
+      <line x1="30" y1="320" x2="55" y2="320" stroke="#fcd34d" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <text x="60" y="324" fill="#94a3b8" font-size="10" font-family="Inter,sans-serif">Soft delete / restore</text>
+      <line x1="30" y1="335" x2="55" y2="335" stroke="#fca5a5" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <text x="60" y="339" fill="#94a3b8" font-size="10" font-family="Inter,sans-serif">Permanent delete</text>
+    </svg>
+    <div class="diagram-caption">Figure 1 — S3 Object Versioning State Machine: showing transitions through upload, overwrite, soft-delete, restore and permanent delete</div>
+  </div>
+
+  <div class="callout exam">
+    <div class="callout-icon">🎓</div>
+    <div class="callout-body">
+      <div class="callout-title">Interview &amp; Exam Tip</div>
+      <p class="callout-text">When a bucket has versioning enabled and you delete an object without specifying a version ID, S3 does <em>not</em> remove any data — it inserts a <strong>delete marker</strong>. The object re-appears instantly when the marker is removed. This is a frequently tested distinction in AWS certification exams and real-world design interviews.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 4: REPLICATION -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="replication">
+  <div class="section-label">🌐 Replication</div>
+  <h2 class="section-heading">S3 Replication — CRR &amp; SRR</h2>
+  <p class="section-intro">Amazon S3 Replication automatically copies objects from a source bucket to one or more destination buckets. The mechanism runs asynchronously in the background and supports both cross-region and same-region scenarios, each serving distinct architectural goals.</p>
+
+  <div class="compare-grid">
+    <div class="compare-card success">
+      <h4 style="color:#22d3ee">🌍 Cross-Region Replication (CRR)</h4>
+      <ul>
+        <li>Source and destination buckets in <em>different</em> AWS regions</li>
+        <li>Reduces read latency for geographically distributed users</li>
+        <li>Satisfies regulatory and data-residency compliance requirements</li>
+        <li>Enables replication across separate AWS accounts</li>
+        <li>Supports disaster recovery strategy with geographic isolation</li>
+      </ul>
+    </div>
+    <div class="compare-card success">
+      <h4 style="color:#34d399">🏠 Same-Region Replication (SRR)</h4>
+      <ul>
+        <li>Source and destination buckets in the <em>same</em> AWS region</li>
+        <li>Aggregate log files from multiple source buckets into one</li>
+        <li>Mirror production data into isolated test or staging environments</li>
+        <li>Lower data transfer cost than CRR</li>
+        <li>Can also span multiple AWS accounts within same region</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Prerequisites for Enabling Replication</h3>
+  <ul class="steps-list">
+    <li><span>Enable <strong>versioning on both</strong> the source and destination buckets — replication will not function without versioning active on each side.</span></li>
+    <li><span>Attach a suitable <strong>IAM role</strong> granting the S3 service <code>s3:GetObject</code> on the source and <code>s3:ReplicateObject</code> on the destination.</span></li>
+    <li><span>Define a <strong>replication rule</strong> (via the Management tab → Replication Rules) that specifies the rule scope (all objects or a prefix/tag filter) and the destination bucket ARN.</span></li>
+    <li><span>Optionally configure <strong>delete marker replication</strong> and <strong>replica modification sync</strong> within the replication rule settings.</span></li>
+  </ul>
+
+  <div class="callout info">
+    <div class="callout-icon">ℹ️</div>
+    <div class="callout-body">
+      <div class="callout-title">Important Behaviour</div>
+      <p class="callout-text">When you enable a replication rule, only <strong>new objects</strong> written after that moment are replicated automatically. To replicate objects that already exist in the source bucket, you must separately trigger an <strong>S3 Batch Replication</strong> job. This also handles any objects that previously failed replication due to transient errors.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 5: REPLICATION ARCHITECTURE DIAGRAM -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="replication-arch">
+  <div class="section-label">🏗️ Architecture</div>
+  <h2 class="section-heading">Replication Architecture Overview</h2>
+
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 820 310" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:820px;display:block;margin:0 auto;">
+      <defs>
+        <linearGradient id="g1" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#1e3a5f"/>
+          <stop offset="100%" style="stop-color:#172554"/>
+        </linearGradient>
+        <linearGradient id="g2" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#064e3b"/>
+          <stop offset="100%" style="stop-color:#053329"/>
+        </linearGradient>
+        <linearGradient id="g3" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#312e81"/>
+          <stop offset="100%" style="stop-color:#1e1b4b"/>
+        </linearGradient>
+        <marker id="ar1" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#60a5fa"/>
+        </marker>
+        <marker id="ar2" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#34d399"/>
+        </marker>
+      </defs>
+
+      <!-- Region A box -->
+      <rect x="15" y="30" width="230" height="250" rx="10" fill="#0d1117" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,3"/>
+      <text x="130" y="52" text-anchor="middle" fill="#60a5fa" font-size="11" font-family="Sora,sans-serif" font-weight="600">REGION A (ap-south-1)</text>
+
+      <!-- Source bucket -->
+      <rect x="40" y="65" width="180" height="100" rx="8" fill="url(#g1)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="130" y="93" text-anchor="middle" fill="#93c5fd" font-size="12" font-family="Sora,sans-serif" font-weight="700">📦 Source Bucket</text>
+      <text x="130" y="112" text-anchor="middle" fill="#60a5fa" font-size="10" font-family="JetBrains Mono,monospace">s3://prod-backup-origin</text>
+      <text x="130" y="130" text-anchor="middle" fill="#93c5fd" font-size="10" font-family="Inter,sans-serif">Versioning: Enabled</text>
+      <text x="130" y="146" text-anchor="middle" fill="#93c5fd" font-size="10" font-family="Inter,sans-serif">Objects: All prefixes</text>
+
+      <!-- IAM Role box -->
+      <rect x="55" y="195" width="150" height="60" rx="6" fill="#1c1f2e" stroke="#8b5cf6" stroke-width="1"/>
+      <text x="130" y="218" text-anchor="middle" fill="#c4b5fd" font-size="11" font-family="Sora,sans-serif" font-weight="600">🔑 IAM Replication Role</text>
+      <text x="130" y="235" text-anchor="middle" fill="#a78bfa" font-size="10" font-family="Inter,sans-serif">GetObject / ReplicateObject</text>
+      <text x="130" y="249" text-anchor="middle" fill="#a78bfa" font-size="10" font-family="Inter,sans-serif">Delegated to S3 service</text>
+
+      <!-- Arrow: S3 service to replica -->
+      <path d="M 245 120 Q 340 60 410 120" stroke="#60a5fa" stroke-width="2" fill="none" stroke-dasharray="6,3" marker-end="url(#ar1)" class="animated-dash"/>
+      <text x="328" y="72" text-anchor="middle" fill="#93c5fd" font-size="11" font-family="Inter,sans-serif">Async replication</text>
+      <text x="328" y="86" text-anchor="middle" fill="#60a5fa" font-size="10" font-family="JetBrains Mono,monospace">PUT / version copy</text>
+
+      <!-- Region B box -->
+      <rect x="410" y="30" width="230" height="180" rx="10" fill="#0d1117" stroke="#34d399" stroke-width="1.5" stroke-dasharray="6,3"/>
+      <text x="525" y="52" text-anchor="middle" fill="#34d399" font-size="11" font-family="Sora,sans-serif" font-weight="600">REGION B (us-east-1)</text>
+
+      <!-- Replica bucket -->
+      <rect x="435" y="65" width="180" height="120" rx="8" fill="url(#g2)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="525" y="93" text-anchor="middle" fill="#6ee7b7" font-size="12" font-family="Sora,sans-serif" font-weight="700">📦 Replica Bucket</text>
+      <text x="525" y="112" text-anchor="middle" fill="#34d399" font-size="10" font-family="JetBrains Mono,monospace">s3://prod-backup-replica</text>
+      <text x="525" y="130" text-anchor="middle" fill="#6ee7b7" font-size="10" font-family="Inter,sans-serif">Versioning: Enabled</text>
+      <text x="525" y="148" text-anchor="middle" fill="#6ee7b7" font-size="10" font-family="Inter,sans-serif">Version IDs: Identical</text>
+      <text x="525" y="166" text-anchor="middle" fill="#a7f3d0" font-size="10" font-family="Inter,sans-serif">Delete markers: Replicated ✓</text>
+
+      <!-- SRR option box -->
+      <rect x="660" y="30" width="145" height="180" rx="10" fill="#0d1117" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="6,3"/>
+      <text x="732" y="52" text-anchor="middle" fill="#c4b5fd" font-size="10" font-family="Sora,sans-serif" font-weight="600">REGION A (SRR)</text>
+      <rect x="678" y="65" width="109" height="100" rx="8" fill="url(#g3)" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="732" y="93" text-anchor="middle" fill="#c4b5fd" font-size="11" font-family="Sora,sans-serif" font-weight="700">📦 SRR Target</text>
+      <text x="732" y="112" text-anchor="middle" fill="#a78bfa" font-size="10" font-family="Inter,sans-serif">Same region</text>
+      <text x="732" y="128" text-anchor="middle" fill="#a78bfa" font-size="10" font-family="Inter,sans-serif">Log aggregation</text>
+      <text x="732" y="144" text-anchor="middle" fill="#a78bfa" font-size="10" font-family="Inter,sans-serif">or test mirror</text>
+      <path d="M 640 115 Q 658 115 660 115" stroke="#8b5cf6" stroke-width="1.5" fill="none" stroke-dasharray="4,2" marker-end="url(#ar2)"/>
+
+      <!-- Batch replication note -->
+      <rect x="20" y="295" width="770" height="8" rx="2" fill="none"/>
+      <text x="410" y="302" text-anchor="middle" fill="#64748b" font-size="10" font-family="Inter,sans-serif">💡 Existing objects require S3 Batch Replication — new objects replicate automatically once the rule is active</text>
+
+      <!-- No chaining note -->
+      <rect x="15" y="240" width="375" height="42" rx="6" fill="rgba(245,158,11,0.08)" stroke="rgba(245,158,11,0.3)" stroke-width="1"/>
+      <text x="202" y="258" text-anchor="middle" fill="#fcd34d" font-size="11" font-family="Sora,sans-serif" font-weight="600">⚠️ No Chaining of Replications</text>
+      <text x="202" y="274" text-anchor="middle" fill="#fde68a" font-size="10" font-family="Inter,sans-serif">Objects replicated to Bucket B do NOT auto-replicate to Bucket C</text>
+    </svg>
+    <div class="diagram-caption">Figure 2 — CRR and SRR architecture with IAM role, version ID preservation and delete marker replication</div>
+  </div>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 6: REPLICATION NOTES -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="replication-notes">
+  <div class="section-label">📋 Key Rules</div>
+  <h2 class="section-heading">Replication Behaviour &amp; Constraints</h2>
+  <p class="section-intro">Several behavioural nuances in S3 Replication affect how you design your data pipeline. Understanding these prevents unexpected gaps in your replicated data.</p>
+
+  <div class="card">
+    <div class="card-title">📌 Core Replication Rules</div>
+    <ul class="bullet-list">
+      <li><strong>New objects only by default</strong> — enabling a replication rule replicates future PUTs only. Pre-existing objects in the source bucket are not touched.</li>
+      <li><strong>S3 Batch Replication for back-fill</strong> — run a one-time Batch Replication job to copy pre-existing objects, or to re-replicate previously failed objects.</li>
+      <li><strong>Version IDs are preserved</strong> — the version ID of the replicated object in the destination bucket exactly matches the source. This is critical for audit trail integrity.</li>
+      <li><strong>Delete markers are optional</strong> — by default, deleting an object in the source does NOT propagate the delete marker to the replica. You must explicitly enable <em>Delete Marker Replication</em> in the rule settings.</li>
+      <li><strong>Permanent deletes are never replicated</strong> — deleting a specific version ID in the source never replicates to the destination. This is a deliberate safeguard against accidental or malicious mass-deletion cascades.</li>
+      <li><strong>No chaining</strong> — if Bucket-A replicates to Bucket-B, and Bucket-B replicates to Bucket-C, objects from Bucket-A do not reach Bucket-C through this chain. Each rule operates independently.</li>
+    </ul>
+  </div>
+
+  <div class="callout exam">
+    <div class="callout-icon">🎓</div>
+    <div class="callout-body">
+      <div class="callout-title">Exam Tip — Delete Semantics</div>
+      <p class="callout-text">Exam questions often probe this distinction: <em>delete markers CAN be replicated</em> (if the rule is configured), but <em>version-specific permanent deletes are NEVER replicated</em>. This asymmetry is intentional — it protects replica buckets from cascading destructive operations originating in the source account.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 7: STORAGE CLASSES -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="storage-classes">
+  <div class="section-label">💾 Storage Tiers</div>
+  <h2 class="section-heading">Amazon S3 Storage Classes</h2>
+  <p class="section-intro">S3 offers seven distinct storage classes, each engineered for a specific access pattern and cost profile. Choosing the right class — or automating the selection — can reduce storage costs by up to 90% compared to storing everything on S3 Standard.</p>
+
+  <h3>Durability vs Availability</h3>
+  <p>Before comparing classes, two foundational metrics matter:</p>
+
+  <div class="compare-grid">
+    <div class="card" style="margin:0">
+      <div class="card-title">🛡️ Durability — 11 Nines (99.999999999%)</div>
+      <p style="margin:0;font-size:14px;color:var(--text-secondary)">Durability describes the probability that an object is <em>not lost</em>. At 11 nines, you would statistically expect to lose a single object if you stored 10 million objects for 10,000 years. <strong>This figure is identical across all storage classes.</strong></p>
+    </div>
+    <div class="card" style="margin:0">
+      <div class="card-title">📡 Availability — Varies by Class</div>
+      <p style="margin:0;font-size:14px;color:var(--text-secondary)">Availability describes how reliably you can access data. S3 Standard targets 99.99% (≈53 min/year downtime). Lower-tier classes accept reduced availability in exchange for lower cost. Design your applications accordingly.</p>
+    </div>
+  </div>
+
+  <h3>Storage Class Comparison</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Storage Class</th>
+        <th>Availability</th>
+        <th>Min Duration</th>
+        <th>Retrieval Cost</th>
+        <th>Best For</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tier-pill tier-hot">HOT</span> S3 Standard</td>
+        <td>99.99%</td>
+        <td>None</td>
+        <td>Free</td>
+        <td>Frequently accessed data, websites, analytics</td>
+      </tr>
+      <tr>
+        <td><span class="tier-pill tier-hot">HOT</span> S3 Intelligent-Tiering</td>
+        <td>99.9%–99.99%</td>
+        <td>None</td>
+        <td>Free (auto-tier)</td>
+        <td>Unknown or changing access patterns</td>
+      </tr>
+      <tr>
+        <td><span class="tier-pill tier-warm">WARM</span> S3 Standard-IA</td>
+        <td>99.9%</td>
+        <td>30 days</td>
+        <td>Per GB retrieved</td>
+        <td>Disaster recovery, backup data</td>
+      </tr>
+      <tr>
+        <td><span class="tier-pill tier-warm">WARM</span> S3 One Zone-IA</td>
+        <td>99.5%</td>
+        <td>30 days</td>
+        <td>Per GB retrieved</td>
+        <td>Secondary backups, re-creatable data</td>
+      </tr>
+      <tr>
+        <td><span class="tier-pill tier-cold">COLD</span> Glacier Instant Retrieval</td>
+        <td>99.9%</td>
+        <td>90 days</td>
+        <td>Per GB retrieved</td>
+        <td>Quarterly accessed archives</td>
+      </tr>
+      <tr>
+        <td><span class="tier-pill tier-cold">COLD</span> Glacier Flexible Retrieval</td>
+        <td>99.99%</td>
+        <td>90 days</td>
+        <td>Per GB retrieved</td>
+        <td>Archives, 1–12 hour SLA acceptable</td>
+      </tr>
+      <tr>
+        <td><span class="tier-pill tier-ice">ARCHIVE</span> Glacier Deep Archive</td>
+        <td>99.99%</td>
+        <td>180 days</td>
+        <td>Per GB retrieved</td>
+        <td>Long-term retention, compliance vaults</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Glacier Retrieval Options Breakdown</h3>
+  <div class="product-grid">
+    <div class="product-card cyan">
+      <div class="pname">⚡ Glacier Instant</div>
+      <div class="pfull">Millisecond retrieval</div>
+      <p class="pdesc">Access archived data in milliseconds. Ideal for medical images or compliance records accessed quarterly. Minimum 90-day retention.</p>
+    </div>
+    <div class="product-card blue">
+      <div class="pname">🔄 Glacier Flexible</div>
+      <div class="pfull">1 min–12 hr retrieval</div>
+      <p class="pdesc"><strong>Expedited:</strong> 1–5 min | <strong>Standard:</strong> 3–5 hr | <strong>Bulk (free):</strong> 5–12 hr. Best for non-urgent archive restoration at minimal cost.</p>
+    </div>
+    <div class="product-card purple">
+      <div class="pname">🧊 Deep Archive</div>
+      <div class="pfull">12–48 hr retrieval</div>
+      <p class="pdesc"><strong>Standard:</strong> 12 hr | <strong>Bulk:</strong> 48 hr. Lowest storage cost in S3. Minimum 180-day retention. Built for regulatory and compliance vaults.</p>
+    </div>
+  </div>
+
+  <h3>S3 Intelligent-Tiering</h3>
+  <p>Intelligent-Tiering eliminates the need to manually choose a class when access patterns are unpredictable. S3 automatically moves objects between tiers based on observed access frequency, incurring a small monthly monitoring fee per object but no retrieval charges.</p>
+
+  <table>
+    <thead>
+      <tr><th>Tier within Intelligent-Tiering</th><th>Trigger Condition</th><th>Mode</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Frequent Access</td><td>Default — active objects</td><td>Automatic</td></tr>
+      <tr><td>Infrequent Access</td><td>Not accessed for 30 days</td><td>Automatic</td></tr>
+      <tr><td>Archive Instant Access</td><td>Not accessed for 90 days</td><td>Automatic</td></tr>
+      <tr><td>Archive Access</td><td>Configurable: 90–700+ days</td><td>Optional</td></tr>
+      <tr><td>Deep Archive Access</td><td>Configurable: 180–700+ days</td><td>Optional</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout tip">
+    <div class="callout-icon">✅</div>
+    <div class="callout-body">
+      <div class="callout-title">Best Practice — When to Use Each Class</div>
+      <p class="callout-text">Use <strong>S3 Standard</strong> for active production data. Switch to <strong>Standard-IA</strong> for DR snapshots accessed rarely. Use <strong>Intelligent-Tiering</strong> when you cannot predict access patterns. Move compliance archives to <strong>Glacier Deep Archive</strong> after a configurable retention period using Lifecycle rules — this is where the biggest cost savings are realised.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 8: TIER LIFECYCLE DIAGRAM -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="tiers-diagram">
+  <div class="section-label">📊 Diagram</div>
+  <h2 class="section-heading">Cloud Storage Retention Tier Architecture</h2>
+  <p class="section-intro">The diagram below visualises a typical cloud backup architecture spanning Hot, Warm, Cold, and Deep Archive tiers — with data flowing from on-premises clients through a secure gateway into S3's tiered storage pools.</p>
+
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 820 400" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:820px;display:block;margin:0 auto;">
+      <defs>
+        <linearGradient id="gClient" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#1e3054"/>
+          <stop offset="100%" style="stop-color:#111f3b"/>
+        </linearGradient>
+        <linearGradient id="gGW" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#312e81"/>
+          <stop offset="100%" style="stop-color:#1e1b4b"/>
+        </linearGradient>
+        <linearGradient id="gHot" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#7f1d1d"/>
+          <stop offset="100%" style="stop-color:#991b1b"/>
+        </linearGradient>
+        <linearGradient id="gWarm" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#78350f"/>
+          <stop offset="100%" style="stop-color:#92400e"/>
+        </linearGradient>
+        <linearGradient id="gCold" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#1e3a5f"/>
+          <stop offset="100%" style="stop-color:#172554"/>
+        </linearGradient>
+        <linearGradient id="gIce" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#1e1b4b"/>
+          <stop offset="100%" style="stop-color:#14103b"/>
+        </linearGradient>
+        <marker id="mArrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#60a5fa"/>
+        </marker>
+        <marker id="mArrowG" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#34d399"/>
+        </marker>
+      </defs>
+
+      <!-- On-Prem zone -->
+      <rect x="10" y="10" width="155" height="380" rx="10" fill="#0d1117" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="87" y="30" text-anchor="middle" fill="#60a5fa" font-size="10" font-family="Sora,sans-serif" font-weight="600">ON-PREMISES</text>
+
+      <!-- Clients -->
+      <rect x="25" y="45" width="125" height="60" rx="7" fill="url(#gClient)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="87" y="70" text-anchor="middle" fill="#93c5fd" font-size="13" font-family="Inter,sans-serif" font-weight="700">🖥️ App Servers</text>
+      <text x="87" y="88" text-anchor="middle" fill="#60a5fa" font-size="10" font-family="Inter,sans-serif">172.18.10.x</text>
+
+      <rect x="25" y="125" width="125" height="60" rx="7" fill="url(#gClient)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="87" y="150" text-anchor="middle" fill="#93c5fd" font-size="13" font-family="Inter,sans-serif" font-weight="700">💾 File Servers</text>
+      <text x="87" y="168" text-anchor="middle" fill="#60a5fa" font-size="10" font-family="Inter,sans-serif">nas-corp-01.local</text>
+
+      <rect x="25" y="205" width="125" height="60" rx="7" fill="url(#gClient)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="87" y="230" text-anchor="middle" fill="#93c5fd" font-size="13" font-family="Inter,sans-serif" font-weight="700">🗄️ DB Backups</text>
+      <text x="87" y="248" text-anchor="middle" fill="#60a5fa" font-size="10" font-family="Inter,sans-serif">db-backup-srv</text>
+
+      <rect x="25" y="285" width="125" height="60" rx="7" fill="url(#gClient)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="87" y="310" text-anchor="middle" fill="#93c5fd" font-size="13" font-family="Inter,sans-serif" font-weight="700">📊 Analytics</text>
+      <text x="87" y="328" text-anchor="middle" fill="#60a5fa" font-size="10" font-family="Inter,sans-serif">etl-pipeline-01</text>
+
+      <!-- Arrows to gateway -->
+      <line x1="150" y1="75" x2="225" y2="180" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#mArrow)" class="animated-dash"/>
+      <line x1="150" y1="155" x2="225" y2="190" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#mArrow)" class="animated-dash"/>
+      <line x1="150" y1="235" x2="225" y2="200" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#mArrow)" class="animated-dash"/>
+      <line x1="150" y1="315" x2="225" y2="210" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#mArrow)" class="animated-dash"/>
+
+      <!-- Gateway -->
+      <rect x="225" y="145" width="130" height="100" rx="10" fill="url(#gGW)" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="290" y="176" text-anchor="middle" fill="#c4b5fd" font-size="13" font-family="Sora,sans-serif" font-weight="700">🔐 Secure</text>
+      <text x="290" y="192" text-anchor="middle" fill="#c4b5fd" font-size="13" font-family="Sora,sans-serif" font-weight="700">Gateway</text>
+      <text x="290" y="210" text-anchor="middle" fill="#a78bfa" font-size="10" font-family="Inter,sans-serif">TLS 1.3 Encryption</text>
+      <text x="290" y="226" text-anchor="middle" fill="#a78bfa" font-size="10" font-family="Inter,sans-serif">IAM / VPC Endpoint</text>
+
+      <!-- Arrow gateway to S3 pools -->
+      <line x1="355" y1="195" x2="405" y2="195" stroke="#8b5cf6" stroke-width="2" marker-end="url(#mArrow)"/>
+
+      <!-- S3 Zone -->
+      <rect x="405" y="10" width="400" height="380" rx="10" fill="#0a0f1a" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="605" y="30" text-anchor="middle" fill="#06b6d4" font-size="10" font-family="Sora,sans-serif" font-weight="600">AWS S3 STORAGE POOLS</text>
+
+      <!-- HOT -->
+      <rect x="420" y="45" width="370" height="70" rx="8" fill="url(#gHot)" stroke="#ef4444" stroke-width="1.5"/>
+      <text x="480" y="74" text-anchor="middle" fill="#fca5a5" font-size="14">🔥</text>
+      <text x="510" y="74" text-anchor="start" fill="#fca5a5" font-size="13" font-family="Sora,sans-serif" font-weight="700">HOT — S3 Standard</text>
+      <text x="510" y="91" text-anchor="start" fill="#fecaca" font-size="10" font-family="Inter,sans-serif">Immediate access · 99.99% availability · No min. duration</text>
+      <text x="510" y="105" text-anchor="start" fill="#fecaca" font-size="10" font-family="Inter,sans-serif">Use: active databases, real-time analytics, application data</text>
+
+      <!-- WARM -->
+      <rect x="420" y="130" width="370" height="70" rx="8" fill="url(#gWarm)" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="480" y="159" text-anchor="middle" fill="#fcd34d" font-size="14">🌡️</text>
+      <text x="510" y="159" text-anchor="start" fill="#fcd34d" font-size="13" font-family="Sora,sans-serif" font-weight="700">WARM — S3 Standard-IA / One Zone-IA</text>
+      <text x="510" y="176" text-anchor="start" fill="#fde68a" font-size="10" font-family="Inter,sans-serif">Low latency · Retrieval fee · 30-day min · Multi-AZ or single-AZ</text>
+      <text x="510" y="190" text-anchor="start" fill="#fde68a" font-size="10" font-family="Inter,sans-serif">Use: DR copies, weekly backups, infrequent compliance reports</text>
+
+      <!-- COLD -->
+      <rect x="420" y="215" width="370" height="70" rx="8" fill="url(#gCold)" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="480" y="244" text-anchor="middle" fill="#93c5fd" font-size="14">❄️</text>
+      <text x="510" y="244" text-anchor="start" fill="#93c5fd" font-size="13" font-family="Sora,sans-serif" font-weight="700">COLD — Glacier Instant / Flexible</text>
+      <text x="510" y="261" text-anchor="start" fill="#bfdbfe" font-size="10" font-family="Inter,sans-serif">Retrieval: ms (Instant) or 1 min–12 hr (Flexible) · 90-day min</text>
+      <text x="510" y="275" text-anchor="start" fill="#bfdbfe" font-size="10" font-family="Inter,sans-serif">Use: quarterly audits, long-term backup retention, WORM archives</text>
+
+      <!-- DEEP ARCHIVE -->
+      <rect x="420" y="300" width="370" height="70" rx="8" fill="url(#gIce)" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="480" y="329" text-anchor="middle" fill="#c4b5fd" font-size="14">🧊</text>
+      <text x="510" y="329" text-anchor="start" fill="#c4b5fd" font-size="13" font-family="Sora,sans-serif" font-weight="700">DEEP ARCHIVE — Glacier Deep Archive</text>
+      <text x="510" y="346" text-anchor="start" fill="#ddd6fe" font-size="10" font-family="Inter,sans-serif">Retrieval: 12–48 hr · 180-day min · Lowest cost per GB</text>
+      <text x="510" y="360" text-anchor="start" fill="#ddd6fe" font-size="10" font-family="Inter,sans-serif">Use: 7-year compliance vaults, regulatory archives, cold cold data</text>
+
+      <!-- Lifecycle arrows between tiers -->
+      <line x1="605" y1="115" x2="605" y2="128" stroke="#34d399" stroke-width="1.5" marker-end="url(#mArrowG)"/>
+      <line x1="605" y1="200" x2="605" y2="213" stroke="#34d399" stroke-width="1.5" marker-end="url(#mArrowG)"/>
+      <line x1="605" y1="285" x2="605" y2="298" stroke="#34d399" stroke-width="1.5" marker-end="url(#mArrowG)"/>
+      <text x="615" y="124" fill="#34d399" font-size="9" font-family="Inter,sans-serif">30d</text>
+      <text x="615" y="209" fill="#34d399" font-size="9" font-family="Inter,sans-serif">90d</text>
+      <text x="615" y="294" fill="#34d399" font-size="9" font-family="Inter,sans-serif">180d</text>
+    </svg>
+    <div class="diagram-caption">Figure 3 — Cloud Backup Architecture: On-premises clients → Secure Gateway → S3 Hot / Warm / Cold / Deep Archive retention tiers with automated lifecycle transitions</div>
+  </div>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 9: LIFECYCLE AUTOMATION -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="lifecycle">
+  <div class="section-label">⚙️ Automation</div>
+  <h2 class="section-heading">Lifecycle Policy Automation</h2>
+  <p class="section-intro">Rather than managing storage classes manually for each object, S3 Lifecycle Policies let you define time-based rules that automatically transition objects between tiers. This is the primary mechanism for implementing tiered data retention at scale with zero operational overhead after initial configuration.</p>
+
+  <h3>Example: Multi-Tier Lifecycle Policy</h3>
+  <p>The configuration below illustrates a typical lifecycle policy for enterprise backup data. Adjust the day thresholds to match your data retention requirements and SLA agreements.</p>
+
+<pre><code># S3 Lifecycle Rule — example via AWS CLI
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket prod-backup-origin-acme \
+  --lifecycle-configuration '{
+    "Rules": [{
+      "ID": "TieredRetentionPolicy",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "" },
+      "Transitions": [
+        { "Days": 30,  "StorageClass": "STANDARD_IA" },
+        { "Days": 60,  "StorageClass": "INTELLIGENT_TIERING" },
+        { "Days": 90,  "StorageClass": "GLACIER_IR" },
+        { "Days": 180, "StorageClass": "GLACIER" },
+        { "Days": 365, "StorageClass": "DEEP_ARCHIVE" }
+      ],
+      "NoncurrentVersionTransitions": [
+        { "NoncurrentDays": 30, "StorageClass": "STANDARD_IA" }
+      ],
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 365 }
+    }]
+  }'</code></pre>
+
+  <div class="callout note">
+    <div class="callout-icon">📝</div>
+    <div class="callout-body">
+      <div class="callout-title">Tutorial Note</div>
+      <p class="callout-text">Lifecycle rules operate on both <em>current</em> and <em>non-current</em> (versioned) object states. Use <code>NoncurrentVersionTransitions</code> to also tier out old versions of versioned objects — otherwise old versions remain in S3 Standard and continue accumulating cost.</p>
+    </div>
+  </div>
+
+  <h3>Lifecycle Policy Configuration via Console</h3>
+  <ul class="steps-list">
+    <li><span>Navigate to your S3 bucket → <strong>Management</strong> tab → <strong>Lifecycle rules</strong>.</span></li>
+    <li><span>Click <strong>Create lifecycle rule</strong>, name it (e.g. <code>TieredRetentionPolicy</code>), and set the scope (all objects or a specific prefix/tag).</span></li>
+    <li><span>Under <strong>Lifecycle rule actions</strong>, select <em>Transition current versions of objects between storage classes</em>.</span></li>
+    <li><span>Add transition steps — for example: <code>Standard-IA</code> at 30 days → <code>Glacier Flexible Retrieval</code> at 180 days.</span></li>
+    <li><span>Review the <strong>Timeline summary</strong> diagram rendered by the console to verify the intended transitions, then save the rule.</span></li>
+  </ul>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 10: EXPRESS ONE ZONE -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="express-one-zone">
+  <div class="section-label">⚡ High-Performance</div>
+  <h2 class="section-heading">S3 Express One Zone</h2>
+  <p class="section-intro">S3 Express One Zone is a specialised, single-AZ storage class engineered for workloads that demand the absolute lowest latency and highest throughput from object storage. It operates through a new bucket type called a <strong>directory bucket</strong>, which differs architecturally from standard S3 buckets.</p>
+
+  <div class="card">
+    <div class="card-title">⚡ Key Characteristics</div>
+    <ul class="bullet-list">
+      <li><strong>Single-digit millisecond latency</strong> — consistent low-latency access at scale, not just median-case.</li>
+      <li><strong>100,000s requests/second throughput</strong> — handles extreme burst and sustained high-rate workloads.</li>
+      <li><strong>~10× faster than S3 Standard</strong> — achieved by co-locating the directory bucket in the same AZ as your compute (EC2, SageMaker, EMR).</li>
+      <li><strong>~50% lower storage cost</strong> — despite the performance advantage, the per-GB cost is lower than S3 Standard due to simplified replication (single AZ only).</li>
+      <li><strong>Lower availability tolerance</strong> — single-AZ means if that AZ has an outage, access is interrupted. Not suitable for multi-AZ resilience requirements.</li>
+      <li><strong>Directory bucket architecture</strong> — uses a flat namespace with a directory-style path model, different from the hierarchical key model of standard buckets.</li>
+    </ul>
+  </div>
+
+  <div class="compare-grid">
+    <div class="card" style="margin:0;border-color:rgba(6,182,212,0.3)">
+      <div class="card-title" style="color:#22d3ee">🎯 Ideal Use Cases</div>
+      <ul class="bullet-list">
+        <li>AI / ML model training (e.g. Amazon SageMaker training jobs)</li>
+        <li>High-performance computing — simulation data, checkpoint files</li>
+        <li>Financial modelling — tick-data processing, risk calculations</li>
+        <li>Interactive analytics (Amazon Athena, EMR, AWS Glue)</li>
+        <li>Media processing pipelines with high frame/segment throughput</li>
+      </ul>
+    </div>
+    <div class="card" style="margin:0;border-color:rgba(239,68,68,0.3)">
+      <div class="card-title" style="color:#fca5a5">🚫 Not Suitable For</div>
+      <ul class="bullet-list">
+        <li>Data requiring multi-AZ durability guarantees</li>
+        <li>Long-term archive or infrequent access data</li>
+        <li>Cross-region replication targets</li>
+        <li>Static website hosting</li>
+        <li>Compliance workloads requiring geographic redundancy</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout exam">
+    <div class="callout-icon">🎓</div>
+    <div class="callout-body">
+      <div class="callout-title">Interview Tip — Express One Zone vs One Zone-IA</div>
+      <p class="callout-text">These are both single-AZ but serve opposite use cases. <strong>One Zone-IA</strong> is for infrequently accessed, recreatable data where cost savings matter. <strong>Express One Zone</strong> is for <em>latency-critical, high-throughput</em> compute workloads where speed and request rate are the priority. They are not interchangeable.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- SECTION 11: INTERVIEW Q&A -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="interview">
+  <div class="section-label">🎯 Scenario Q&amp;A</div>
+  <h2 class="section-heading">Interview &amp; Scenario-Based Questions</h2>
+  <p class="section-intro">These scenario-based questions reflect the type of design and configuration discussions you encounter in cloud architecture interviews and AWS certification exams.</p>
+
+  <div class="qa-item">
+    <div class="qa-q">Your team accidentally overwrote a critical configuration file stored in S3. How do you recover the previous version with minimal disruption?</div>
+    <div class="qa-a">If versioning is enabled on the bucket, the overwrite creates a new version rather than destroying the old one. Navigate to the object in the S3 console, enable "Show Versions," identify the version ID corresponding to the last known-good state, and either: (a) delete the newer version to promote the previous one back to current, or (b) copy the historical version to the same key using the AWS CLI — <code>aws s3api copy-object --copy-source bucket/key?versionId=XXXX --bucket bucket --key key</code>. If versioning was not enabled, recovery is not possible from S3 itself, which is why enabling versioning proactively on all business-critical buckets is essential.</div>
+  </div>
+
+  <div class="qa-item">
+    <div class="qa-q">A junior engineer deleted a folder from a versioned S3 bucket. A week later it was discovered the deletion was a mistake. How would you restore it?</div>
+    <div class="qa-a">In a versioning-enabled bucket, "deleting a folder" creates delete markers on all objects under that prefix. To restore, list all objects under the prefix with <code>aws s3api list-object-versions --bucket &lt;name&gt; --prefix &lt;folder/&gt;</code>, filter for delete markers, and batch-delete those markers using <code>aws s3api delete-object --version-id &lt;delete-marker-id&gt;</code>. Once the delete markers are removed, the objects reappear at their previous version. For large folders, use S3 Batch Operations to process the deletions at scale.</div>
+  </div>
+
+  <div class="qa-item">
+    <div class="qa-q">Your organisation needs to replicate S3 data from a production bucket in Mumbai to a DR bucket in Singapore, but pre-existing objects are not being replicated. Why?</div>
+    <div class="qa-a">S3 Cross-Region Replication (CRR) only replicates objects written <em>after</em> the replication rule is created. Pre-existing objects are excluded by default. To replicate them, trigger an <strong>S3 Batch Replication</strong> job targeting the source bucket with the manifest filtered by the prefix or date range you want. This also handles any objects that failed replication due to transient errors. Going forward, once the rule is active, all new PUT operations replicate automatically.</div>
+  </div>
+
+  <div class="qa-item">
+    <div class="qa-q">A compliance team requires that all objects in a regulatory archive remain accessible for 7 years but are accessed at most once per year. Which storage class minimises cost while meeting this SLA?</div>
+    <div class="qa-a">S3 Glacier Deep Archive is the optimal choice. It offers the lowest per-GB storage cost across all S3 classes with a 180-day minimum retention and retrieval times of 12 hours (Standard) or 48 hours (Bulk). For data accessed at most once per year, the retrieval cost is negligible. Implement this via a Lifecycle rule that transitions objects to Deep Archive after the initial retention window in a higher tier expires. Combine with S3 Object Lock (Compliance mode) to enforce WORM protection for the 7-year period.</div>
+  </div>
+
+  <div class="qa-item">
+    <div class="qa-q">Why would you choose S3 Express One Zone over S3 Standard for an ML training pipeline, despite the reduced availability?</div>
+    <div class="qa-a">ML training workloads are typically compute-bound and benefit enormously from low-latency, high-throughput storage access during the training run. S3 Express One Zone delivers single-digit millisecond latency and supports hundreds of thousands of requests per second when the directory bucket is co-located in the same AZ as the training instances (e.g. SageMaker). The data written during training is generally ephemeral — checkpoints and intermediate outputs can be re-generated if lost — so single-AZ availability is an acceptable trade-off. The ~50% cost saving over S3 Standard also reduces the per-training-run cost significantly at scale.</div>
+  </div>
+
+  <div class="qa-item">
+    <div class="qa-q">You have replication configured from Bucket-A to Bucket-B, and separately from Bucket-B to Bucket-C. Will objects in Bucket-A automatically reach Bucket-C?</div>
+    <div class="qa-a">No. S3 replication does not chain. Objects replicated from Bucket-A to Bucket-B are treated as new objects in Bucket-B, but they will <em>not</em> be forwarded to Bucket-C by the Bucket-B-to-Bucket-C rule. Each replication rule operates independently and only on objects uploaded directly to its source bucket. To propagate objects from Bucket-A to Bucket-C, you must set up an explicit replication rule directly from Bucket-A to Bucket-C.</div>
+  </div>
+</section>
+
+<hr class="section-sep">
+
+<!-- ─────────────────────────────────────────────────────── -->
+<!-- AUTHOR -->
+<!-- ─────────────────────────────────────────────────────── -->
+<section id="author">
+  <div class="author-card">
+    <div class="author-top">
+      <div class="author-avatar">MA</div>
+      <div>
+        <div class="author-name">Mohammed Abdul</div>
+        <div class="author-role">Data Protection Architect · 10+ Years Experience</div>
+        <p class="author-bio">Mohammed Abdul is a Data Protection Architect with more than 10 years of experience in Hybrid Cloud, having worked with global clients across multiple industries. He specialises in designing and implementing enterprise-grade backup, recovery, and data resilience strategies across AWS, Azure, and GCP environments.</p>
+      </div>
+    </div>
+
+    <div class="tech-badges">
+      <span class="tech-badge">☁️ AWS</span>
+      <span class="tech-badge">🔷 Azure</span>
+      <span class="tech-badge">🟡 GCP</span>
+      <span class="tech-badge">🔒 Commvault</span>
+      <span class="tech-badge">🛡️ Veeam</span>
+      <span class="tech-badge">📦 NetBackup</span>
+      <span class="tech-badge">🗄️ NetApp</span>
+    </div>
+
+    <div style="margin-top:16px">
+      <a class="contact-link" href="mailto:abdul.md.20000102@gmail.com">
+        ✉️ &nbsp;abdul.md.20000102@gmail.com
+      </a>
+    </div>
+
+    <div class="callout info" style="margin-top:20px;margin-bottom:0">
+      <div class="callout-icon">📌</div>
+      <div class="callout-body">
+        <div class="callout-title">Disclaimer</div>
+        <p class="callout-text">This content is produced for educational purposes and self-paced learning. All architectural recommendations should be validated against your organisation's specific security policies and compliance requirements. Always consult official AWS documentation for production implementations and verify service limits and pricing in your target region.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- /content-wrap -->
+</div><!-- /main-content -->
+
+</body>
+</html>

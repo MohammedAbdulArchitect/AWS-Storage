@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS Block &amp; File Storage Deep Dive — EBS, EFS &amp; Storage Architecture | Cloud Tutorial</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Inter:wght@300;400;500;600&amp;display=swap');
+
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-card: #1c2230;
+    --bg-sidebar: #111827;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --accent-orange: #f97316;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border-color: #2d3748;
+    --border-bright: #374151;
+    --sidebar-width: 280px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    display: flex;
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  /* ── Progress bar ─── */
+  #progress-bar {
+    position: fixed; top: 0; left: var(--sidebar-width); right: 0;
+    height: 3px; background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+    transform-origin: left; transform: scaleX(0); z-index: 200; transition: transform 0.1s linear;
+  }
+
+  /* ── Sidebar ─── */
+  .sidebar {
+    width: var(--sidebar-width);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    position: fixed; top: 0; left: 0; bottom: 0;
+    overflow-y: auto; z-index: 100;
+    display: flex; flex-direction: column;
+  }
+  .sidebar-logo { padding: 20px 20px 16px; border-bottom: 1px solid var(--border-color); }
+  .sidebar-logo .brand { font-family: 'Sora',sans-serif; font-size: 13px; font-weight: 600; color: var(--accent-orange); letter-spacing: 0.08em; text-transform: uppercase; }
+  .sidebar-logo .subtitle { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .toc-title { padding: 16px 20px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+  .toc-list { list-style: none; padding: 0 8px 20px; }
+  .toc-list li a {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px;
+    text-decoration: none; color: var(--text-secondary); font-size: 13px; font-weight: 400; transition: all 0.2s;
+  }
+  .toc-list li a:hover, .toc-list li a.active { background: rgba(249,115,22,0.12); color: var(--accent-orange); }
+  .toc-list li a .icon { font-size: 14px; width: 18px; flex-shrink: 0; }
+  .toc-list li a .num {
+    font-size: 10px; background: var(--bg-card); border: 1px solid var(--border-color);
+    padding: 1px 5px; border-radius: 3px; color: var(--text-muted); margin-left: auto;
+    font-family: 'JetBrains Mono',monospace;
+  }
+  .toc-divider { height: 1px; background: var(--border-color); margin: 8px 20px; }
+
+  /* ── Main ─── */
+  .main-content { margin-left: var(--sidebar-width); flex: 1; min-height: 100vh; }
+
+  .page-header {
+    background: linear-gradient(135deg, #1a0f00 0%, #1a1200 50%, #0d0800 100%);
+    border-bottom: 1px solid var(--border-color);
+    padding: 56px 60px 48px; position: relative; overflow: hidden;
+  }
+  .page-header::before {
+    content: ''; position: absolute; top: -60px; right: -60px; width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(249,115,22,0.12) 0%, transparent 70%); pointer-events: none;
+  }
+  .page-header::after {
+    content: ''; position: absolute; bottom: -80px; left: 200px; width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(245,158,11,0.07) 0%, transparent 70%); pointer-events: none;
+  }
+  .header-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(249,115,22,0.15); border: 1px solid rgba(249,115,22,0.3);
+    color: var(--accent-orange); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 20px;
+  }
+  .page-title { font-family: 'Sora',sans-serif; font-size: 36px; font-weight: 700; color: #fff; line-height: 1.2; margin-bottom: 12px; }
+  .page-title span { color: var(--accent-amber); }
+  .page-subtitle { font-size: 16px; color: var(--text-secondary); max-width: 640px; margin-bottom: 28px; }
+  .header-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+  .tag-orange { background: rgba(249,115,22,0.15); color: #fb923c; border: 1px solid rgba(249,115,22,0.25); }
+  .tag-amber  { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+  .tag-green  { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+  .tag-cyan   { background: rgba(6,182,212,0.12);  color: #22d3ee; border: 1px solid rgba(6,182,212,0.25); }
+  .tag-blue   { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+
+  /* ── Content wrap ─── */
+  .content-wrap { max-width: 900px; padding: 48px 60px 80px; }
+
+  .section-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(249,115,22,0.08); border: 1px solid rgba(249,115,22,0.2);
+    color: var(--accent-orange); padding: 3px 10px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px;
+  }
+  h2.section-heading { font-family: 'Sora',sans-serif; font-size: 26px; font-weight: 700; color: #fff; margin-bottom: 6px; padding-top: 4px; }
+  .section-intro { color: var(--text-secondary); font-size: 15px; margin-bottom: 28px; max-width: 700px; }
+  h3 { font-family: 'Sora',sans-serif; font-size: 18px; font-weight: 600; color: #e2e8f0; margin: 28px 0 12px; }
+  h4 { font-family: 'Sora',sans-serif; font-size: 15px; font-weight: 600; color: #cbd5e1; margin: 20px 0 8px; }
+  p { margin-bottom: 14px; color: var(--text-secondary); }
+  .section-sep { border: none; border-top: 1px solid var(--border-color); margin: 52px 0 44px; }
+  .page-section { scroll-margin-top: 24px; }
+  .highlight { color: var(--accent-amber); font-weight: 600; }
+
+  /* ── Cards ─── */
+  .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+  .card-title { font-family: 'Sora',sans-serif; font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+
+  /* ── Product grid ─── */
+  .product-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 16px; margin: 20px 0 28px; }
+  .product-card {
+    background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px;
+    padding: 20px; transition: border-color 0.2s,transform 0.2s; position: relative; overflow: hidden;
+  }
+  .product-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+  .product-card.blue::before   { background: var(--accent-blue); }
+  .product-card.cyan::before   { background: var(--accent-cyan); }
+  .product-card.green::before  { background: var(--accent-green); }
+  .product-card.amber::before  { background: var(--accent-amber); }
+  .product-card.purple::before { background: var(--accent-purple); }
+  .product-card.red::before    { background: var(--accent-red); }
+  .product-card.orange::before { background: var(--accent-orange); }
+  .product-card:hover { border-color: var(--border-bright); transform: translateY(-2px); }
+  .product-card .pname { font-family: 'Sora',sans-serif; font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .product-card .pfull { font-size: 11px; color: var(--text-muted); font-style: italic; margin-bottom: 10px; }
+  .product-card .pbadge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; margin-bottom: 10px; }
+  .product-card .pdesc { font-size: 13px; color: var(--text-secondary); margin: 0; }
+  .badge-ssd    { background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .badge-hdd    { background: rgba(245,158,11,0.15); color: #fcd34d; }
+  .badge-nfs    { background: rgba(16,185,129,0.15); color: #34d399; }
+  .badge-multi  { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+  .badge-enc    { background: rgba(249,115,22,0.15); color: #fb923c; }
+
+  /* ── Callouts ─── */
+  .callout { border-radius: 8px; padding: 16px 20px; margin: 20px 0; display: flex; gap: 14px; }
+  .callout-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .callout-body { flex: 1; }
+  .callout-title { font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+  .callout-text  { font-size: 13.5px; margin: 0; line-height: 1.6; }
+  .callout.tip     { background: rgba(16,185,129,0.08);  border: 1px solid rgba(16,185,129,0.25); }
+  .callout.tip .callout-title { color: #34d399; } .callout.tip .callout-text { color: #a7f3d0; }
+  .callout.warning { background: rgba(245,158,11,0.08);  border: 1px solid rgba(245,158,11,0.25); }
+  .callout.warning .callout-title { color: #fcd34d; } .callout.warning .callout-text { color: #fde68a; }
+  .callout.info    { background: rgba(59,130,246,0.08);  border: 1px solid rgba(59,130,246,0.25); }
+  .callout.info .callout-title { color: #93c5fd; } .callout.info .callout-text { color: #bfdbfe; }
+  .callout.exam    { background: rgba(139,92,246,0.08);  border: 1px solid rgba(139,92,246,0.25); }
+  .callout.exam .callout-title { color: #c4b5fd; } .callout.exam .callout-text { color: #ddd6fe; }
+  .callout.note    { background: rgba(6,182,212,0.08);   border: 1px solid rgba(6,182,212,0.2); }
+  .callout.note .callout-title { color: #67e8f9; } .callout.note .callout-text { color: #cffafe; }
+
+  /* ── Code ─── */
+  pre, code { font-family: 'JetBrains Mono',monospace; }
+  pre { background: #0a0f1a; border: 1px solid var(--border-color); border-left: 3px solid var(--accent-orange); border-radius: 6px; padding: 18px 20px; overflow-x: auto; font-size: 13px; color: #fed7aa; margin: 14px 0; line-height: 1.6; }
+  code { background: rgba(249,115,22,0.1); color: #fb923c; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  pre code { background: none; color: inherit; padding: 0; }
+
+  /* ── Tables ─── */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 14px; }
+  thead th { background: var(--bg-secondary); color: var(--accent-amber); font-family: 'Sora',sans-serif; font-weight: 600; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; padding: 12px 16px; border-bottom: 2px solid var(--border-color); text-align: left; }
+  tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); vertical-align: top; }
+  tbody tr:hover td { background: rgba(249,115,22,0.04); }
+  tbody td:first-child { color: #e2e8f0; font-weight: 500; }
+
+  /* ── Steps ─── */
+  .steps-list { counter-reset: step-counter; list-style: none; margin: 16px 0; }
+  .steps-list li { counter-increment: step-counter; display: flex; gap: 14px; margin-bottom: 14px; align-items: flex-start; }
+  .steps-list li::before { content: counter(step-counter); background: linear-gradient(135deg,var(--accent-orange),var(--accent-amber)); color: #fff; font-weight: 700; font-size: 12px; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .steps-list li span { font-size: 14px; color: var(--text-secondary); }
+
+  /* ── Bullet list ─── */
+  ul.bullet-list { list-style: none; margin: 10px 0; }
+  ul.bullet-list li { font-size: 14px; color: var(--text-secondary); padding: 5px 0; padding-left: 18px; position: relative; }
+  ul.bullet-list li::before { content: '▸'; position: absolute; left: 0; color: var(--accent-amber); font-size: 12px; }
+
+  /* ── Compare grid ─── */
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .compare-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
+  .compare-card.success { border-color: rgba(16,185,129,0.3); }
+  .compare-card.danger  { border-color: rgba(239,68,68,0.3); }
+  .compare-card.info    { border-color: rgba(59,130,246,0.3); }
+  .compare-card h4 { margin-top: 0; }
+  .compare-card ul { list-style: none; margin-top: 10px; }
+  .compare-card ul li { font-size: 13.5px; color: var(--text-secondary); padding: 5px 0; border-bottom: 1px solid var(--border-color); display: flex; align-items: flex-start; gap: 8px; }
+  .compare-card ul li:last-child { border-bottom: none; }
+  .compare-card.success ul li::before { content: '✓'; color: var(--accent-green); }
+  .compare-card.danger  ul li::before { content: '✗'; color: var(--accent-red); }
+  .compare-card.info    ul li::before { content: '→'; color: var(--accent-blue); }
+
+  /* ── Mermaid ─── */
+  .mermaid-wrap { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 24px; margin: 20px 0; overflow-x: auto; }
+  .mermaid-caption { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+  .mermaid svg text, .mermaid svg tspan { fill: #86efac !important; stroke: none !important; }
+  .mermaid svg .label, .mermaid svg .nodeLabel, .mermaid svg .edgeLabel { fill: #86efac !important; }
+  .mermaid foreignObject div, .mermaid foreignObject span, .mermaid foreignObject p { color: #86efac !important; background: transparent !important; }
+  .mermaid svg .edgeLabel rect, .mermaid svg .edgeLabel foreignObject { fill: #162d4a !important; background: #162d4a !important; }
+  .mermaid svg .node rect, .mermaid svg .node circle, .mermaid svg .node ellipse, .mermaid svg .node polygon, .mermaid svg .node path { fill: #1e4080 !important; stroke: #60a5fa !important; stroke-width: 1.5px !important; }
+  .mermaid svg .cluster rect, .mermaid svg .subgraph rect { fill: #0d1e35 !important; stroke: #3b82f6 !important; }
+  .mermaid svg .actor { fill: #1e4080 !important; stroke: #60a5fa !important; }
+  .mermaid svg .note, .mermaid svg rect.note { fill: #0f3a5a !important; stroke: #06b6d4 !important; }
+  .mermaid svg path.flowchart-link, .mermaid svg path[class*="edge"], .mermaid svg path[class*="arrow"] { stroke: #94a3b8 !important; fill: none !important; }
+  .mermaid svg marker path, .mermaid svg marker polygon { fill: #94a3b8 !important; stroke: #94a3b8 !important; }
+
+  /* ── SVG diagram container ─── */
+  .svg-wrap { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 24px; margin: 20px 0; overflow-x: auto; text-align: center; }
+  .svg-caption { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+
+  /* ── Animated SVG keyframe ─── */
+  @keyframes dashflow { to { stroke-dashoffset: -20; } }
+  .flow-line { animation: dashflow 1.2s linear infinite; }
+
+  /* ── Q&amp;A ─── */
+  .qa-list { margin: 16px 0; }
+  .qa-item { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 18px 20px; margin-bottom: 14px; }
+  .qa-q { font-weight: 600; color: #e2e8f0; font-size: 14px; margin-bottom: 10px; display: flex; gap: 8px; align-items: flex-start; }
+  .qa-q::before { content: 'Q'; background: var(--accent-orange); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 3px; font-family: 'Sora',sans-serif; flex-shrink: 0; margin-top: 2px; }
+  .qa-a { font-size: 13.5px; color: var(--text-secondary); padding-left: 28px; line-height: 1.7; margin: 0; }
+
+  /* ── Accordion ─── */
+  details { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 10px; }
+  summary { padding: 14px 18px; cursor: pointer; font-weight: 600; font-size: 14px; color: #e2e8f0; list-style: none; display: flex; align-items: center; gap: 8px; }
+  summary::before { content: '▶'; font-size: 10px; color: var(--accent-amber); transition: transform 0.2s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  details .accordion-body { padding: 0 18px 16px; font-size: 13.5px; color: var(--text-secondary); line-height: 1.7; }
+
+  /* ── Author ─── */
+  .author-section { background: linear-gradient(135deg,#1a0f00 0%,#1a1200 100%); border: 1px solid rgba(249,115,22,0.25); border-radius: 12px; padding: 32px; margin-top: 56px; }
+  .author-header { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px; }
+  .author-avatar { width: 70px; height: 70px; border-radius: 50%; background: linear-gradient(135deg,var(--accent-orange),var(--accent-amber)); display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
+  .author-meta h3 { margin: 0 0 4px; font-size: 20px; color: #fff; }
+  .author-meta .role { font-size: 13px; color: var(--accent-amber); margin-bottom: 8px; }
+  .author-meta p { font-size: 14px; color: var(--text-secondary); margin: 0; }
+  .tech-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+  .tech-badge { background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.25); color: #fb923c; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+  .email-card { display: inline-flex; align-items: center; gap: 8px; background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.25); padding: 10px 16px; border-radius: 8px; text-decoration: none; color: var(--accent-cyan); font-size: 14px; font-weight: 500; transition: background 0.2s; margin-top: 8px; }
+  .email-card:hover { background: rgba(6,182,212,0.14); }
+  .disclaimer-box { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.2); border-radius: 8px; padding: 14px 18px; margin-top: 20px; font-size: 12.5px; color: #fde68a; line-height: 1.6; }
+  .disclaimer-box strong { color: #fcd34d; }
+
+  /* ── Tier bar (storage classes) ─── */
+  .tier-bar { display: flex; border-radius: 8px; overflow: hidden; margin: 20px 0; border: 1px solid var(--border-color); }
+  .tier-segment { flex: 1; padding: 16px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .tier-segment:not(:last-child) { border-right: 1px solid var(--border-color); }
+  .tier-label { font-family: 'Sora',sans-serif; font-size: 13px; font-weight: 700; }
+  .tier-sub   { font-size: 11px; color: var(--text-muted); }
+  .tier-hot   { background: rgba(239,68,68,0.10); }    .tier-hot   .tier-label { color: #f87171; }
+  .tier-warm  { background: rgba(245,158,11,0.10); }   .tier-warm  .tier-label { color: #fcd34d; }
+  .tier-cool  { background: rgba(59,130,246,0.10); }   .tier-cool  .tier-label { color: #60a5fa; }
+  .tier-cold  { background: rgba(100,116,139,0.12); }  .tier-cold  .tier-label { color: #94a3b8; }
+
+  /* ── Responsive ─── */
+  @media (max-width:900px) {
+    .sidebar { display: none; }
+    .main-content { margin-left: 0; }
+    .page-header { padding: 36px 24px 32px; }
+    .content-wrap { padding: 32px 24px 60px; }
+    .page-title { font-size: 26px; }
+    .compare-grid { grid-template-columns: 1fr; }
+    .product-grid  { grid-template-columns: 1fr; }
+    #progress-bar  { left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- ═══ SIDEBAR ════════════════════════════════════════════════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="brand">☁️ AWS Cloud Tutorials</div>
+    <div class="subtitle">Block Storage · File Storage · Encryption</div>
+  </div>
+  <div class="toc-title">Table of Contents</div>
+  <ul class="toc-list">
+    <li><a href="#overview">    <span class="icon">🗂️</span> Storage Overview       <span class="num">01</span></a></li>
+    <li><a href="#ebs-types">   <span class="icon">💽</span> EBS Volume Types        <span class="num">02</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#gp-volumes">  <span class="icon">⚡</span> GP2 vs GP3 Deep Dive   <span class="num">03</span></a></li>
+    <li><a href="#piops">       <span class="icon">🚀</span> Provisioned IOPS (io1/io2) <span class="num">04</span></a></li>
+    <li><a href="#hdd-volumes"> <span class="icon">🗄️</span> HDD Volumes (st1 / sc1) <span class="num">05</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#multiattach"> <span class="icon">🔗</span> EBS Multi-Attach        <span class="num">06</span></a></li>
+    <li><a href="#encryption">  <span class="icon">🔐</span> EBS Encryption          <span class="num">07</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#efs">         <span class="icon">📁</span> Amazon EFS Overview     <span class="num">08</span></a></li>
+    <li><a href="#efs-modes">   <span class="icon">🎚️</span> EFS Performance Modes   <span class="num">09</span></a></li>
+    <li><a href="#efs-tiers">   <span class="icon">🧊</span> EFS Storage Tiers       <span class="num">10</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#ebs-vs-efs">  <span class="icon">⚖️</span> EBS vs EFS Comparison   <span class="num">11</span></a></li>
+    <li><a href="#architecture"><span class="icon">🏗️</span> Architecture Diagrams   <span class="num">12</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#interview">   <span class="icon">💼</span> Interview Q&amp;A       <span class="num">13</span></a></li>
+    <li><a href="#about">       <span class="icon">👤</span> About the Author        <span class="num">14</span></a></li>
+  </ul>
+</nav>
+
+<!-- ═══ MAIN ════════════════════════════════════════════════════════════════ -->
+<main class="main-content">
+
+  <div class="page-header">
+    <div class="header-badge">☁️ AWS Cloud Tutorial Series</div>
+    <h1 class="page-title">AWS Block &amp; File Storage<br><span>EBS, EFS &amp; Cloud Storage Architecture</span></h1>
+    <p class="page-subtitle">A practitioner-focused guide to Amazon Elastic Block Store volume families, Multi-Attach, encryption workflows, and Elastic File System — including performance modes, storage tiers, and production architecture patterns.</p>
+    <div class="header-tags">
+      <span class="tag tag-orange">Platform: AWS EC2 Storage</span>
+      <span class="tag tag-amber">EBS · EFS · KMS Encryption</span>
+      <span class="tag tag-green">Production-Ready Patterns</span>
+      <span class="tag tag-cyan">Interview Prep Included</span>
+      <span class="tag tag-blue">Level: Intermediate</span>
+    </div>
+  </div>
+
+  <div class="content-wrap">
+
+    <!-- ══ SECTION 01 ══════════════════════════════════════════════════════ -->
+    <section id="overview" class="page-section">
+      <div class="section-label">📍 Section 01</div>
+      <h2 class="section-heading">AWS Storage Service Overview</h2>
+      <p class="section-intro">AWS offers a layered storage stack, from raw block volumes attached to virtual machines all the way to fully managed distributed file systems. Choosing the right service hinges on access pattern, latency requirements, durability target, and cost envelope.</p>
+
+      <h3>The Three Storage Layers</h3>
+      <p>Before diving into individual services, it helps to anchor the landscape. All AWS compute-attached storage falls into one of three fundamental paradigms:</p>
+
+      <div class="product-grid">
+        <div class="product-card blue">
+          <div class="pname">Instance Store</div>
+          <div class="pfull">Ephemeral NVMe / SSD</div>
+          <span class="pbadge badge-ssd">Ephemeral</span>
+          <p class="pdesc">Physically attached to the host. Provides the lowest latency of any storage tier, but data is lost if the instance is stopped or terminated. Best for buffers, caches, and scratch data.</p>
+        </div>
+        <div class="product-card orange">
+          <div class="pname">EBS</div>
+          <div class="pfull">Elastic Block Store</div>
+          <span class="pbadge badge-ssd">Block · Persistent</span>
+          <p class="pdesc">Network-attached block device that persists independently of EC2 lifecycle. Functions like a virtual SAN volume. Supports snapshots and AZ-scoped replication.</p>
+        </div>
+        <div class="product-card green">
+          <div class="pname">EFS</div>
+          <div class="pfull">Elastic File System</div>
+          <span class="pbadge badge-nfs">NFS · Shared</span>
+          <p class="pdesc">Fully managed NFSv4 file system mountable simultaneously from thousands of EC2 instances across multiple Availability Zones. Scales automatically, pay-per-GB used.</p>
+        </div>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-icon">ℹ️</div>
+        <div class="callout-body">
+          <div class="callout-title">Key Design Principle</div>
+          <p class="callout-text">Instance Store → ephemeral scratch. EBS → durable single-instance block. EFS → shared, multi-instance, multi-AZ file system. Always match the storage category to the workload's durability and sharing requirements before optimising for cost.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 02 ══════════════════════════════════════════════════════ -->
+    <section id="ebs-types" class="page-section">
+      <div class="section-label">📍 Section 02</div>
+      <h2 class="section-heading">EBS Volume Type Families</h2>
+      <p class="section-intro">Amazon EBS currently offers six distinct volume types grouped into SSD-backed and HDD-backed families. The selection of the correct family is the single most impactful cost and performance decision for storage-intensive workloads.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Volume Type</th>
+            <th>Family</th>
+            <th>Max IOPS</th>
+            <th>Max Throughput</th>
+            <th>Boot Volume?</th>
+            <th>Primary Use Case</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>gp3</td><td>General Purpose SSD</td><td>16,000</td><td>1,000 MB/s</td><td>✅ Yes</td><td>Most workloads — OS, dev/test, web servers</td></tr>
+          <tr><td>gp2</td><td>General Purpose SSD</td><td>16,000</td><td>250 MB/s</td><td>✅ Yes</td><td>Legacy general workloads (superseded by gp3)</td></tr>
+          <tr><td>io2 Block Express</td><td>Provisioned IOPS SSD</td><td>256,000</td><td>4,000 MB/s</td><td>✅ Yes</td><td>Mission-critical databases (Oracle, SAP HANA)</td></tr>
+          <tr><td>io1</td><td>Provisioned IOPS SSD</td><td>64,000</td><td>1,000 MB/s</td><td>✅ Yes</td><td>High-IOPS transactional databases</td></tr>
+          <tr><td>st1</td><td>Throughput Optimised HDD</td><td>500</td><td>500 MB/s</td><td>❌ No</td><td>Big data, data warehouses, log pipelines</td></tr>
+          <tr><td>sc1</td><td>Cold HDD</td><td>250</td><td>250 MB/s</td><td>❌ No</td><td>Infrequently accessed archives, lowest cost</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout exam">
+        <div class="callout-icon">🎯</div>
+        <div class="callout-body">
+          <div class="callout-title">Interview / Certification Tip</div>
+          <p class="callout-text">Only gp2, gp3, io1, and io2 can serve as <strong>root/boot volumes</strong>. HDD-backed volumes (st1, sc1) cannot. This is a common exam question — memorise this boundary.</p>
+        </div>
+      </div>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart TD
+    A[Select EBS Volume Type] --> B{Workload Profile?}
+    B -->|General Purpose| C[gp3 / gp2]
+    B -->|High-IOPS Database| D[io1 / io2 Block Express]
+    B -->|Throughput-Intensive| E[st1 — HDD Optimised]
+    B -->|Archive / Low Cost| F[sc1 — Cold HDD]
+    C --> G{Need independent<br/>IOPS + Throughput?}
+    G -->|Yes| H[Use gp3 — decoupled scaling]
+    G -->|No legacy| I[Use gp2 — linked IOPS/size]
+    D --> J{Need > 64K IOPS<br/>or sub-ms latency?}
+    J -->|Yes| K[io2 Block Express]
+    J -->|No| L[io1 — up to 64K IOPS]
+        </div>
+        <p class="mermaid-caption">Figure 1 — EBS volume type selection decision tree</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 03 ══════════════════════════════════════════════════════ -->
+    <section id="gp-volumes" class="page-section">
+      <div class="section-label">📍 Section 03</div>
+      <h2 class="section-heading">GP2 vs GP3 — General Purpose SSD Deep Dive</h2>
+      <p class="section-intro">The gp3 volume type supersedes gp2 in virtually every dimension. Understanding the mechanical difference between them is critical for both cost optimisation and workload right-sizing.</p>
+
+      <div class="compare-grid">
+        <div class="compare-card info">
+          <h4>🔷 gp3 — Newer Generation</h4>
+          <ul>
+            <li>Baseline 3,000 IOPS and 125 MB/s included at no extra cost</li>
+            <li>IOPS can be provisioned up to 16,000 <em>independently</em> of volume size</li>
+            <li>Throughput can be provisioned up to 1,000 MB/s independently</li>
+            <li>Decoupling IOPS from capacity avoids over-provisioning</li>
+            <li>Lower cost per GB than gp2 in most regions</li>
+          </ul>
+        </div>
+        <div class="compare-card danger">
+          <h4>🔶 gp2 — Legacy Generation</h4>
+          <ul>
+            <li>IOPS are tightly linked to volume size: 3 IOPS per GB</li>
+            <li>Small volumes can burst to 3,000 IOPS via credit bucket</li>
+            <li>To reach 16,000 IOPS you must provision ≥ 5,334 GB</li>
+            <li>No independent throughput scaling</li>
+            <li>Max throughput capped at 250 MB/s</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>The gp2 IOPS Ceiling</h3>
+      <p>In gp2 the performance ceiling is dictated by capacity. A workload requiring 16,000 IOPS must be backed by at least <span class="highlight">5,334 GB</span> of storage, regardless of whether the capacity itself is needed. gp3 eliminates this constraint entirely, making it the default choice for new deployments.</p>
+
+      <div class="callout tip">
+        <div class="callout-icon">✅</div>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice</div>
+          <p class="callout-text">Migrate existing gp2 volumes to gp3 for any workload that does not require burst credit behaviour. AWS supports in-place modification with no downtime, and gp3 typically reduces storage costs by 20% or more.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 04 ══════════════════════════════════════════════════════ -->
+    <section id="piops" class="page-section">
+      <div class="section-label">📍 Section 04</div>
+      <h2 class="section-heading">Provisioned IOPS — io1 &amp; io2 Block Express</h2>
+      <p class="section-intro">When a workload demands sustained, predictable I/O performance beyond what gp3 can deliver — or requires sub-millisecond latency — the Provisioned IOPS family is the answer.</p>
+
+      <h3>When to Choose Provisioned IOPS</h3>
+      <ul class="bullet-list">
+        <li>Relational databases requiring sustained > 16,000 IOPS (PostgreSQL, MySQL, Oracle)</li>
+        <li>In-memory database transaction logs with strict write latency SLAs</li>
+        <li>Storage-sensitive applications on EC2 Nitro instances requiring maximum throughput</li>
+        <li>Any workload where IOPS consistency matters more than peak burst</li>
+      </ul>
+
+      <div class="product-grid">
+        <div class="product-card blue">
+          <div class="pname">io1</div>
+          <div class="pfull">Provisioned IOPS SSD</div>
+          <span class="pbadge badge-ssd">4 GB – 16 TB</span>
+          <p class="pdesc">Max 64,000 IOPS on Nitro instances (32,000 on others). IOPS provisioned independently from size. Supports EBS Multi-Attach.</p>
+        </div>
+        <div class="product-card purple">
+          <div class="pname">io2 Block Express</div>
+          <div class="pfull">Next-Gen Provisioned IOPS</div>
+          <span class="pbadge badge-multi">Up to 64 TB</span>
+          <p class="pdesc">Max 256,000 IOPS with sub-millisecond latency. IOPS-to-GB ratio of 1,000:1. Supports Multi-Attach. Purpose-built for mission-critical enterprise databases.</p>
+        </div>
+      </div>
+
+      <div class="callout warning">
+        <div class="callout-icon">⚠️</div>
+        <div class="callout-body">
+          <div class="callout-title">Nitro Requirement for Maximum IOPS</div>
+          <p class="callout-text">To achieve the full 64,000 IOPS ceiling on io1, the EC2 instance <strong>must</strong> be a Nitro-based instance type. Non-Nitro instances are capped at 32,000 IOPS regardless of the provisioned value on the volume. Always verify instance family when planning high-IOPS deployments.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 05 ══════════════════════════════════════════════════════ -->
+    <section id="hdd-volumes" class="page-section">
+      <div class="section-label">📍 Section 05</div>
+      <h2 class="section-heading">HDD Volume Families — st1 &amp; sc1</h2>
+      <p class="section-intro">HDD-backed volumes trade random I/O capability for raw sequential throughput at significantly lower cost per gigabyte. They are the correct choice when the workload is read-heavy and sequential in nature.</p>
+
+      <div class="compare-grid">
+        <div class="compare-card success">
+          <h4>🟡 st1 — Throughput Optimised HDD</h4>
+          <ul>
+            <li>Designed for large, sequential read workloads</li>
+            <li>Max throughput: 500 MB/s — max IOPS: 500</li>
+            <li>Ideal for data warehouse queries, ETL pipelines, log aggregation</li>
+            <li>Scales up to 16 TB per volume</li>
+            <li>Cannot be used as a root / boot volume</li>
+          </ul>
+        </div>
+        <div class="compare-card info">
+          <h4>⚪ sc1 — Cold HDD</h4>
+          <ul>
+            <li>Lowest cost per GB of any EBS volume type</li>
+            <li>Max throughput: 250 MB/s — max IOPS: 250</li>
+            <li>Suited for data accessed only a few times per month</li>
+            <li>Archival datasets, compliance cold storage, DR targets</li>
+            <li>Cannot be used as a root / boot volume</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout exam">
+        <div class="callout-icon">🎯</div>
+        <div class="callout-body">
+          <div class="callout-title">Interview / Certification Tip</div>
+          <p class="callout-text">HDD volumes are characterised by <strong>throughput, not IOPS</strong>. If a scenario describes "large sequential reads of log or analytics data at the lowest possible cost," the answer is st1 or sc1. If it says "low-latency transactional," it is always SSD.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 06 ══════════════════════════════════════════════════════ -->
+    <section id="multiattach" class="page-section">
+      <div class="section-label">📍 Section 06</div>
+      <h2 class="section-heading">EBS Multi-Attach — Shared Block Access</h2>
+      <p class="section-intro">Multi-Attach enables a single EBS volume to be simultaneously attached to multiple EC2 instances, enabling shared-disk clustering patterns that previously required specialised SAN hardware.</p>
+
+      <h3>How Multi-Attach Works</h3>
+      <p>A single <span class="highlight">io1</span> or <span class="highlight">io2</span> volume with Multi-Attach enabled can be mounted to up to <strong>16 EC2 instances</strong> concurrently, all within the same Availability Zone. Every attached instance has full read and write permissions to the volume simultaneously.</p>
+
+      <div class="svg-wrap">
+        <svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:680px;">
+          <defs>
+            <linearGradient id="volGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#7c3aed"/>
+              <stop offset="100%" stop-color="#4c1d95"/>
+            </linearGradient>
+            <linearGradient id="instGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1e4080"/>
+              <stop offset="100%" stop-color="#0d1e35"/>
+            </linearGradient>
+            <marker id="arrowMA" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#8b5cf6"/>
+            </marker>
+          </defs>
+          <!-- AZ box -->
+          <rect x="10" y="10" width="680" height="280" rx="12" fill="none" stroke="#374151" stroke-width="1.5" stroke-dasharray="6,4"/>
+          <text x="340" y="30" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" fill="#64748b">Availability Zone — us-east-1b</text>
+
+          <!-- Volume -->
+          <rect x="280" y="100" width="140" height="100" rx="10" fill="url(#volGrad)" stroke="#7c3aed" stroke-width="1.5"/>
+          <text x="350" y="142" text-anchor="middle" font-family="'Sora',sans-serif" font-size="13" font-weight="700" fill="#fff">io2 Volume</text>
+          <text x="350" y="160" text-anchor="middle" font-family="'Inter',sans-serif" font-size="11" fill="#c4b5fd">Multi-Attach ON</text>
+          <text x="350" y="178" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#a78bfa">256K IOPS</text>
+
+          <!-- Instance 1 -->
+          <rect x="30" y="80" width="120" height="70" rx="8" fill="url(#instGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="90" y="110" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="600" fill="#93c5fd">EC2 — A</text>
+          <text x="90" y="128" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">app-node-01</text>
+
+          <!-- Instance 2 -->
+          <rect x="30" y="185" width="120" height="70" rx="8" fill="url(#instGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="90" y="215" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="600" fill="#93c5fd">EC2 — B</text>
+          <text x="90" y="233" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">app-node-02</text>
+
+          <!-- Instance 3 -->
+          <rect x="550" y="80" width="120" height="70" rx="8" fill="url(#instGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="610" y="110" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="600" fill="#93c5fd">EC2 — C</text>
+          <text x="610" y="128" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">app-node-03</text>
+
+          <!-- Instance 4 -->
+          <rect x="550" y="185" width="120" height="70" rx="8" fill="url(#instGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="610" y="215" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="600" fill="#93c5fd">EC2 — D</text>
+          <text x="610" y="233" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">app-node-04</text>
+
+          <!-- Lines left -->
+          <line x1="150" y1="115" x2="280" y2="140" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowMA)" class="flow-line"/>
+          <line x1="150" y1="220" x2="280" y2="175" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowMA)" class="flow-line"/>
+          <!-- Lines right -->
+          <line x1="550" y1="115" x2="420" y2="140" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowMA)" class="flow-line"/>
+          <line x1="550" y1="220" x2="420" y2="175" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowMA)" class="flow-line"/>
+
+          <!-- Label -->
+          <text x="350" y="268" text-anchor="middle" font-family="'Inter',sans-serif" font-size="11" fill="#64748b">All 4 instances share one volume — max 16 concurrent attachments</text>
+        </svg>
+        <p class="svg-caption">Figure 2 — EBS Multi-Attach: single io2 volume attached to multiple EC2 instances in the same AZ</p>
+      </div>
+
+      <h3>Critical Constraints</h3>
+      <ul class="bullet-list">
+        <li>Only available for <code>io1</code> and <code>io2</code> volume types</li>
+        <li>All instances must reside in the <strong>same Availability Zone</strong></li>
+        <li>Maximum of <strong>16 instances</strong> per volume</li>
+        <li>Requires a <strong>cluster-aware file system</strong> (not standard EXT4 or XFS)</li>
+        <li>Application layer must coordinate concurrent write access to prevent data corruption</li>
+      </ul>
+
+      <div class="callout warning">
+        <div class="callout-icon">⚠️</div>
+        <div class="callout-body">
+          <div class="callout-title">File System Warning</div>
+          <p class="callout-text">Mounting a Multi-Attach EBS volume with a non-cluster-aware file system such as EXT4 or XFS across multiple hosts simultaneously <strong>will cause file system corruption</strong>. Use cluster file systems like GFS2 or Oracle OCFS2 when deploying Multi-Attach.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 07 ══════════════════════════════════════════════════════ -->
+    <section id="encryption" class="page-section">
+      <div class="section-label">📍 Section 07</div>
+      <h2 class="section-heading">EBS Encryption — Data at Rest &amp; In-Flight</h2>
+      <p class="section-intro">EBS encryption is a zero-complexity, near-zero-latency security layer that should be enabled on every volume in production. It is handled entirely by the AWS infrastructure without any changes to the application or operating system.</p>
+
+      <h3>What Gets Encrypted</h3>
+      <div class="product-grid">
+        <div class="product-card green">
+          <div class="pname">Data at Rest</div>
+          <p class="pdesc">All data blocks stored on the physical volume are encrypted using AES-256. The encryption is transparent — the guest OS sees a standard block device.</p>
+        </div>
+        <div class="product-card cyan">
+          <div class="pname">Data in Transit</div>
+          <p class="pdesc">All I/O traffic flowing between the EC2 instance and the EBS volume is encrypted over the network path, eliminating eavesdropping risk.</p>
+        </div>
+        <div class="product-card amber">
+          <div class="pname">Snapshots &amp; Clones</div>
+          <p class="pdesc">Snapshots created from an encrypted volume are automatically encrypted. Any volume created from an encrypted snapshot inherits encryption. The chain is unbroken.</p>
+        </div>
+        <div class="product-card orange">
+          <div class="pname">KMS Integration</div>
+          <p class="pdesc">Encryption keys are managed through AWS KMS (AES-256). You can use the AWS-managed default key or bring your own Customer Managed Key (CMK) for full audit trail and rotation control.</p>
+        </div>
+      </div>
+
+      <h3>Encrypting an Existing Unencrypted Volume</h3>
+      <p>EBS does not allow in-place encryption of an existing unencrypted volume. The following four-step process migrates data to an encrypted volume without application downtime if performed carefully:</p>
+
+      <ol class="steps-list">
+        <li><span>Create an EBS <strong>snapshot</strong> of the existing unencrypted volume. The snapshot will initially be unencrypted.</span></li>
+        <li><span>Use the <strong>Copy Snapshot</strong> action and enable encryption. Select or create a KMS key. The copied snapshot will now be encrypted.</span></li>
+        <li><span>Create a new EBS volume from the encrypted snapshot. The resulting volume will be encrypted by default and cannot be changed to unencrypted.</span></li>
+        <li><span>Detach the original volume from the EC2 instance, attach the new encrypted volume, update any mount points or configuration references, then verify operation.</span></li>
+      </ol>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+    A([Unencrypted EBS Volume]) -->|Create Snapshot| B([Unencrypted Snapshot])
+    B -->|Copy with Encryption ON| C([Encrypted Snapshot<br/>AES-256 / KMS])
+    C -->|Create Volume| D([Encrypted EBS Volume])
+    D -->|Attach to EC2| E([EC2 Instance<br/>Encrypted I/O])
+    style A fill:#1e3a5f,stroke:#60a5fa
+    style B fill:#1e3a5f,stroke:#60a5fa
+    style C fill:#14532d,stroke:#4ade80
+    style D fill:#14532d,stroke:#4ade80
+    style E fill:#14532d,stroke:#4ade80
+        </div>
+        <p class="mermaid-caption">Figure 3 — Encryption migration workflow: unencrypted volume → encrypted volume via snapshot copy</p>
+      </div>
+
+      <div class="callout tip">
+        <div class="callout-icon">✅</div>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice</div>
+          <p class="callout-text">Enable the <strong>EBS Encryption by Default</strong> account-level setting. This ensures every newly created volume in the account is automatically encrypted without needing to specify a key on each creation. Combine with a Service Control Policy (SCP) in AWS Organizations to enforce this across all member accounts.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 08 ══════════════════════════════════════════════════════ -->
+    <section id="efs" class="page-section">
+      <div class="section-label">📍 Section 08</div>
+      <h2 class="section-heading">Amazon EFS — Elastic File System</h2>
+      <p class="section-intro">Amazon EFS is a fully managed, serverless NFS file system designed for high-throughput workloads that require concurrent access from many compute resources. Unlike EBS, a single EFS file system can be mounted across thousands of instances simultaneously.</p>
+
+      <h3>Core Characteristics</h3>
+      <ul class="bullet-list">
+        <li>Implements the <strong>NFSv4.1 protocol</strong> — compatible with any Linux NFS client</li>
+        <li>Capacity scales <strong>automatically</strong> — no pre-provisioning required; you pay only for bytes stored</li>
+        <li>Multi-AZ Regional file systems are highly durable (11 nines), backed by replication across three AZs</li>
+        <li>Compatible with <strong>Linux-based AMIs only</strong> — Windows is not supported</li>
+        <li>Encryption at rest with KMS, encryption in transit with TLS</li>
+        <li>POSIX-compliant — applications written to standard POSIX file API need zero modification</li>
+        <li>Priced roughly 3× the cost of a gp2 EBS volume per GB, but with zero waste since there is no pre-provisioning</li>
+      </ul>
+
+      <div class="svg-wrap">
+        <svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:680px;">
+          <defs>
+            <linearGradient id="efsGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#065f46"/>
+              <stop offset="100%" stop-color="#022c22"/>
+            </linearGradient>
+            <linearGradient id="azGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1e3a5f"/>
+              <stop offset="100%" stop-color="#0d1e35"/>
+            </linearGradient>
+            <marker id="arrowEFS" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#10b981"/>
+            </marker>
+          </defs>
+
+          <!-- EFS centre -->
+          <rect x="260" y="110" width="180" height="100" rx="12" fill="url(#efsGrad)" stroke="#10b981" stroke-width="2"/>
+          <text x="350" y="150" text-anchor="middle" font-family="'Sora',sans-serif" font-size="14" font-weight="700" fill="#34d399">Amazon EFS</text>
+          <text x="350" y="168" text-anchor="middle" font-family="'Inter',sans-serif" font-size="11" fill="#6ee7b7">Shared NFS File System</text>
+          <text x="350" y="184" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#4ade80">Auto-scale · KMS Encrypted</text>
+
+          <!-- AZ 1 box -->
+          <rect x="20" y="30" width="160" height="260" rx="10" fill="rgba(59,130,246,0.05)" stroke="#374151" stroke-width="1" stroke-dasharray="5,3"/>
+          <text x="100" y="52" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">AZ — eu-west-1a</text>
+          <rect x="35" y="65" width="130" height="55" rx="7" fill="url(#azGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="100" y="87" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="600" fill="#93c5fd">EC2 Instance 1</text>
+          <text x="100" y="103" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">web-app-01</text>
+          <rect x="35" y="135" width="130" height="55" rx="7" fill="url(#azGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="100" y="157" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="600" fill="#93c5fd">EC2 Instance 2</text>
+          <text x="100" y="173" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">web-app-02</text>
+          <rect x="35" y="205" width="130" height="55" rx="7" fill="url(#azGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="100" y="227" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="600" fill="#93c5fd">EC2 Instance 3</text>
+          <text x="100" y="243" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">batch-worker</text>
+
+          <!-- AZ 2 box -->
+          <rect x="520" y="30" width="160" height="260" rx="10" fill="rgba(16,185,129,0.05)" stroke="#374151" stroke-width="1" stroke-dasharray="5,3"/>
+          <text x="600" y="52" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">AZ — eu-west-1b</text>
+          <rect x="535" y="65" width="130" height="55" rx="7" fill="url(#azGrad)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="600" y="87" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="600" fill="#34d399">EC2 Instance 4</text>
+          <text x="600" y="103" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">cms-node-01</text>
+          <rect x="535" y="135" width="130" height="55" rx="7" fill="url(#azGrad)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="600" y="157" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="600" fill="#34d399">EC2 Instance 5</text>
+          <text x="600" y="173" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">cms-node-02</text>
+
+          <!-- Lines AZ1 → EFS -->
+          <line x1="165" y1="92"  x2="260" y2="145" stroke="#10b981" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowEFS)" class="flow-line"/>
+          <line x1="165" y1="162" x2="260" y2="158" stroke="#10b981" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowEFS)" class="flow-line"/>
+          <line x1="165" y1="232" x2="260" y2="178" stroke="#10b981" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowEFS)" class="flow-line"/>
+          <!-- Lines AZ2 → EFS -->
+          <line x1="535" y1="92"  x2="440" y2="145" stroke="#10b981" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowEFS)" class="flow-line"/>
+          <line x1="535" y1="162" x2="440" y2="162" stroke="#10b981" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowEFS)" class="flow-line"/>
+
+          <text x="350" y="305" text-anchor="middle" font-family="'Inter',sans-serif" font-size="11" fill="#64748b">NFS mounts across AZs share one EFS namespace — all see the same files</text>
+        </svg>
+        <p class="svg-caption">Figure 4 — Amazon EFS mounted across EC2 instances in multiple Availability Zones via a single shared namespace</p>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-icon">ℹ️</div>
+        <div class="callout-body">
+          <div class="callout-title">Practical Use Cases</div>
+          <p class="callout-text">EFS is the right choice for: CMS platforms (WordPress, Drupal) sharing a single upload directory across a web tier fleet; machine learning pipelines sharing a common dataset directory across training nodes; microservices sharing configuration or reference data; and any application whose data directory must survive instance replacement.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 09 ══════════════════════════════════════════════════════ -->
+    <section id="efs-modes" class="page-section">
+      <div class="section-label">📍 Section 09</div>
+      <h2 class="section-heading">EFS Performance &amp; Throughput Modes</h2>
+      <p class="section-intro">EFS exposes two independent control surfaces: <em>Performance Mode</em> (latency vs. parallelism trade-off) and <em>Throughput Mode</em> (how throughput scales). These are set at creation time but can be changed later for Throughput Mode.</p>
+
+      <h3>Performance Modes</h3>
+      <div class="compare-grid">
+        <div class="compare-card success">
+          <h4>⚡ General Purpose (Default)</h4>
+          <ul>
+            <li>Lowest per-operation latency</li>
+            <li>Best for latency-sensitive workloads: web servers, CMS, IDE backends</li>
+            <li>Recommended for the vast majority of use cases</li>
+            <li>Required when using Elastic throughput mode</li>
+          </ul>
+        </div>
+        <div class="compare-card info">
+          <h4>📊 Max I/O</h4>
+          <ul>
+            <li>Higher aggregate throughput and IOPS for highly parallel workloads</li>
+            <li>Tolerates higher per-operation latency in exchange for scale</li>
+            <li>Targeted at big data analytics, media encoding, genome processing</li>
+            <li>Only available with Bursting or Provisioned throughput modes</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Throughput Modes</h3>
+      <table>
+        <thead>
+          <tr><th>Mode</th><th>How Throughput Scales</th><th>Best For</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Bursting</td>
+            <td>Grows proportionally with stored data. Burst credits accumulate during idle periods and are consumed during peak activity.</td>
+            <td>Smaller file systems with spiky, infrequent workloads</td>
+          </tr>
+          <tr>
+            <td>Provisioned</td>
+            <td>You specify a fixed throughput (e.g., 500 MB/s) regardless of file system size. Billed for the provisioned value.</td>
+            <td>File systems requiring consistent throughput independently of storage used</td>
+          </tr>
+          <tr>
+            <td>Elastic (Recommended)</td>
+            <td>AWS automatically scales throughput up and down with workload demand. Up to 3 GB/s reads, 1 GB/s writes.</td>
+            <td>Unpredictable or varying workloads — simplest operational model</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout tip">
+        <div class="callout-icon">✅</div>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice — Default to Elastic Mode</div>
+          <p class="callout-text">AWS recommends Elastic throughput mode as the starting configuration for new EFS file systems. It eliminates capacity planning for throughput, scales automatically, and you pay only for what is consumed. Switch to Provisioned only if you have measured, predictable throughput requirements that make fixed provisioning more cost-effective.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 10 ══════════════════════════════════════════════════════ -->
+    <section id="efs-tiers" class="page-section">
+      <div class="section-label">📍 Section 10</div>
+      <h2 class="section-heading">EFS Storage Tiers &amp; Lifecycle Management</h2>
+      <p class="section-intro">EFS Intelligent-Tiering automatically migrates files between storage tiers based on access frequency, delivering up to 90% cost savings compared to keeping all data in the Standard tier.</p>
+
+      <h3>Storage Tier Spectrum</h3>
+      <div class="tier-bar">
+        <div class="tier-segment tier-hot">
+          <div class="tier-label">🔥 Standard</div>
+          <div class="tier-sub">Frequently accessed</div>
+          <div class="tier-sub">Lowest access latency</div>
+          <div class="tier-sub">Highest storage cost</div>
+        </div>
+        <div class="tier-segment tier-warm">
+          <div class="tier-label">🌡️ Standard-IA</div>
+          <div class="tier-sub">Infrequent access</div>
+          <div class="tier-sub">Lower storage cost</div>
+          <div class="tier-sub">Per-GB retrieval fee</div>
+        </div>
+        <div class="tier-segment tier-cool">
+          <div class="tier-label">❄️ Archive</div>
+          <div class="tier-sub">Rarely accessed</div>
+          <div class="tier-sub">Lowest storage cost</div>
+          <div class="tier-sub">Higher retrieval fee</div>
+        </div>
+      </div>
+
+      <h3>Lifecycle Policy Mechanics</h3>
+      <p>Lifecycle policies evaluate every file in the file system independently. When a file has not been accessed for the configured threshold (e.g., 30 days), EFS moves it to the configured destination tier transparently. The file path and permissions remain unchanged — applications do not need modification.</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+    A[File Created in Standard] -->|Accessed regularly| A
+    A -->|Not accessed for 30 days| B[Moved to Standard-IA]
+    B -->|Accessed / first read| C[Transition back to Standard]
+    B -->|Not accessed for 90 days| D[Moved to Archive]
+    D -->|Accessed| C
+    style A fill:#1e4080,stroke:#60a5fa
+    style B fill:#78350f,stroke:#f59e0b
+    style C fill:#1e4080,stroke:#60a5fa
+    style D fill:#1e3a5f,stroke:#3b82f6
+        </div>
+        <p class="mermaid-caption">Figure 5 — EFS lifecycle policy: automatic file movement between Standard, Standard-IA, and Archive tiers</p>
+      </div>
+
+      <h3>Availability &amp; Durability Options</h3>
+      <div class="compare-grid">
+        <div class="compare-card success">
+          <h4>✅ Regional (Multi-AZ)</h4>
+          <ul>
+            <li>Data replicated across ≥ 3 Availability Zones</li>
+            <li>Survives full AZ outage without data loss</li>
+            <li>Recommended for all production workloads</li>
+            <li>Higher monthly storage rate vs. One Zone</li>
+          </ul>
+        </div>
+        <div class="compare-card info">
+          <h4>🔷 One Zone</h4>
+          <ul>
+            <li>Data stored in a single AZ only</li>
+            <li>Up to 47% lower cost than Regional</li>
+            <li>Suitable for development, testing, or easily reproducible data</li>
+            <li>Compatible with Standard-IA tier for additional savings</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout exam">
+        <div class="callout-icon">🎯</div>
+        <div class="callout-body">
+          <div class="callout-title">Interview / Certification Tip</div>
+          <p class="callout-text">EFS One Zone-IA is the cost-minimisation answer when the question specifies "development environment" or "non-critical data with infrequent access." Regional Multi-AZ is always the answer for production. Combined cost savings of up to 90% are achievable using the right tier + One Zone combination.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 11 ══════════════════════════════════════════════════════ -->
+    <section id="ebs-vs-efs" class="page-section">
+      <div class="section-label">📍 Section 11</div>
+      <h2 class="section-heading">EBS vs EFS — Choosing the Right Storage Service</h2>
+      <p class="section-intro">The choice between EBS and EFS is not a performance question — it is a sharing and access-pattern question. Use the table below as a decision aid.</p>
+
+      <table>
+        <thead>
+          <tr><th>Dimension</th><th>Amazon EBS</th><th>Amazon EFS</th><th>Instance Store</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Attachment Model</td><td>One instance (io1/io2 Multi-Attach: up to 16)</td><td>Thousands of instances concurrently</td><td>Single host — non-detachable</td></tr>
+          <tr><td>Scope</td><td>Locked to one AZ</td><td>Region-wide (or one AZ for One Zone)</td><td>Single physical host</td></tr>
+          <tr><td>Persistence</td><td>Durable — survives instance stop/terminate</td><td>Durable — survives instance stop/terminate</td><td>Ephemeral — lost on stop or terminate</td></tr>
+          <tr><td>Capacity Model</td><td>Pre-provisioned (fixed GB)</td><td>Elastic — no provisioning required</td><td>Fixed by instance type</td></tr>
+          <tr><td>Max Throughput</td><td>4,000 MB/s (io2 Block Express)</td><td>3 GB/s reads, 1 GB/s writes (Elastic)</td><td>Millions of IOPS (local NVMe)</td></tr>
+          <tr><td>OS Support</td><td>Linux &amp; Windows</td><td>Linux only (POSIX)</td><td>Linux &amp; Windows</td></tr>
+          <tr><td>Typical Use Case</td><td>OS root volume, database data files</td><td>Shared web content, ML datasets, CMS</td><td>Buffer, cache, scratch space</td></tr>
+          <tr><td>Relative Cost</td><td>Medium (gp3 baseline)</td><td>Higher per GB (but zero waste)</td><td>Included with instance price</td></tr>
+          <tr><td>Cross-AZ Access</td><td>Snapshot required to migrate AZ</td><td>Native — same mount target across AZs</td><td>N/A</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Cross-AZ Migration — EBS vs EFS</h3>
+      <p>EBS volumes are AZ-scoped. To move data from <code>us-east-1a</code> to <code>us-east-1b</code> you must create a snapshot of the volume, then restore it in the target AZ. EFS, by contrast, presents a single namespace across AZs — no migration is necessary; an instance in any AZ simply mounts the same file system.</p>
+
+      <div class="callout warning">
+        <div class="callout-icon">⚠️</div>
+        <div class="callout-body">
+          <div class="callout-title">EBS Snapshot I/O Impact</div>
+          <p class="callout-text">EBS snapshots consume I/O from the underlying volume during the backup process. Running a snapshot during peak traffic can degrade application performance. Schedule snapshots during maintenance windows or off-peak hours, and consider <strong>Amazon Data Lifecycle Manager</strong> to automate and time this correctly.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 12 ══════════════════════════════════════════════════════ -->
+    <section id="architecture" class="page-section">
+      <div class="section-label">📍 Section 12</div>
+      <h2 class="section-heading">Cloud Storage Architecture — Hot / Cool / Cold Tiering</h2>
+      <p class="section-intro">Production architectures rarely rely on a single storage type. A well-designed system routes data through a tiered pipeline that progressively moves it from high-cost, low-latency active storage to low-cost, high-latency archival storage based on defined retention policies.</p>
+
+      <h3>Diagram 1 — System Block Diagram: On-Premises to Cloud</h3>
+
+      <div class="svg-wrap">
+        <svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:740px;">
+          <defs>
+            <linearGradient id="clientGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1e3a5f"/>
+              <stop offset="100%" stop-color="#0d1e35"/>
+            </linearGradient>
+            <linearGradient id="gwGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#78350f"/>
+              <stop offset="100%" stop-color="#451a03"/>
+            </linearGradient>
+            <linearGradient id="hotGrad"  x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#7f1d1d"/><stop offset="100%" stop-color="#450a0a"/>
+            </linearGradient>
+            <linearGradient id="coolGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1e3a5f"/><stop offset="100%" stop-color="#0d1e35"/>
+            </linearGradient>
+            <linearGradient id="coldGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1e293b"/><stop offset="100%" stop-color="#0f172a"/>
+            </linearGradient>
+            <marker id="arrowArch" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#f59e0b"/>
+            </marker>
+          </defs>
+
+          <!-- On-premises section -->
+          <rect x="10" y="20" width="160" height="360" rx="10" fill="rgba(59,130,246,0.04)" stroke="#374151" stroke-width="1" stroke-dasharray="5,3"/>
+          <text x="90" y="42" text-anchor="middle" font-family="'Sora',sans-serif" font-size="10" font-weight="600" fill="#64748b" text-transform="uppercase">On-Premises</text>
+
+          <!-- Client -->
+          <rect x="25" y="55" width="130" height="65" rx="8" fill="url(#clientGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="90" y="82" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#93c5fd">Backup Client</text>
+          <text x="90" y="98" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">bkp-agent-01</text>
+          <text x="90" y="112" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#64748b">192.168.10.50</text>
+
+          <!-- DB Server -->
+          <rect x="25" y="145" width="130" height="65" rx="8" fill="url(#clientGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="90" y="172" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#93c5fd">DB Server</text>
+          <text x="90" y="188" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">db-prod-02</text>
+          <text x="90" y="202" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#64748b">192.168.10.60</text>
+
+          <!-- File Server -->
+          <rect x="25" y="235" width="130" height="65" rx="8" fill="url(#clientGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="90" y="262" text-anchor="middle" font-family="'Sora',sans-serif" font-size="12" font-weight="700" fill="#93c5fd">File Server</text>
+          <text x="90" y="278" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#64748b">fs-corp-01</text>
+          <text x="90" y="292" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#64748b">192.168.10.70</text>
+
+          <!-- Gateway centre -->
+          <rect x="225" y="140" width="150" height="120" rx="10" fill="url(#gwGrad)" stroke="#f59e0b" stroke-width="2"/>
+          <text x="300" y="185" text-anchor="middle" font-family="'Sora',sans-serif" font-size="13" font-weight="700" fill="#fcd34d">Secure</text>
+          <text x="300" y="203" text-anchor="middle" font-family="'Sora',sans-serif" font-size="13" font-weight="700" fill="#fcd34d">Data Gateway</text>
+          <text x="300" y="222" text-anchor="middle" font-family="'Inter',sans-serif" font-size="10" fill="#fde68a">TLS 1.3 · Dedup · Compress</text>
+          <text x="300" y="238" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" fill="#f59e0b">gw-cloud-01</text>
+
+          <!-- Cloud section -->
+          <rect x="430" y="20" width="320" height="360" rx="10" fill="rgba(16,185,129,0.03)" stroke="#374151" stroke-width="1" stroke-dasharray="5,3"/>
+          <text x="590" y="42" text-anchor="middle" font-family="'Sora',sans-serif" font-size="10" font-weight="600" fill="#64748b">AWS Cloud Storage Pools</text>
+
+          <!-- Hot -->
+          <rect x="450" y="55" width="280" height="80" rx="8" fill="url(#hotGrad)" stroke="#ef4444" stroke-width="1.5"/>
+          <text x="590" y="85" text-anchor="middle" font-family="'Sora',sans-serif" font-size="13" font-weight="700" fill="#fca5a5">🔥 Hot Tier — EBS gp3</text>
+          <text x="590" y="103" text-anchor="middle" font-family="'Inter',sans-serif" font-size="11" fill="#fecaca">Active data · &lt;1ms latency · High IOPS</text>
+          <text x="590" y="120" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#ef4444">Retention: 0–30 days · 3000 IOPS baseline</text>
+
+          <!-- Cool -->
+          <rect x="450" y="160" width="280" height="80" rx="8" fill="url(#coolGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="590" y="190" text-anchor="middle" font-family="'Sora',sans-serif" font-size="13" font-weight="700" fill="#93c5fd">🌡️ Warm Tier — EFS Standard-IA</text>
+          <text x="590" y="208" text-anchor="middle" font-family="'Inter',sans-serif" font-size="11" fill="#bfdbfe">Shared NFS · Multi-AZ · Lifecycle policy</text>
+          <text x="590" y="225" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#3b82f6">Retention: 30–90 days · Lower $/GB</text>
+
+          <!-- Cold -->
+          <rect x="450" y="265" width="280" height="80" rx="8" fill="url(#coldGrad)" stroke="#475569" stroke-width="1.5"/>
+          <text x="590" y="295" text-anchor="middle" font-family="'Sora',sans-serif" font-size="13" font-weight="700" fill="#94a3b8">❄️ Cold Tier — EFS Archive</text>
+          <text x="590" y="313" text-anchor="middle" font-family="'Inter',sans-serif" font-size="11" fill="#64748b">Long-term archive · Compliance retention</text>
+          <text x="590" y="330" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#475569">Retention: 90 days+ · Lowest $/GB</text>
+
+          <!-- Client → Gateway lines -->
+          <line x1="155" y1="87"  x2="225" y2="175" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowArch)" class="flow-line"/>
+          <line x1="155" y1="177" x2="225" y2="200" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowArch)" class="flow-line"/>
+          <line x1="155" y1="267" x2="225" y2="225" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowArch)" class="flow-line"/>
+
+          <!-- Gateway → Tiers lines -->
+          <line x1="375" y1="175" x2="450" y2="95"  stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowArch)" class="flow-line"/>
+          <line x1="375" y1="200" x2="450" y2="200" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowArch)" class="flow-line"/>
+          <line x1="375" y1="225" x2="450" y2="305" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowArch)" class="flow-line"/>
+
+          <!-- Tier-to-tier lifecycle arrows (right side) -->
+          <line x1="730" y1="135" x2="730" y2="160" stroke="#64748b" stroke-width="1" marker-end="url(#arrowArch)"/>
+          <line x1="730" y1="240" x2="730" y2="265" stroke="#64748b" stroke-width="1" marker-end="url(#arrowArch)"/>
+          <text x="745" y="153" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">lifecycle</text>
+          <text x="745" y="258" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">lifecycle</text>
+        </svg>
+        <p class="svg-caption">Figure 6 — Three-tier cloud storage architecture: on-premises sources → secure gateway → Hot / Warm / Cold storage pools</p>
+      </div>
+
+      <h3>Diagram 2 — Data Lifecycle Pipeline</h3>
+
+      <div class="svg-wrap">
+        <svg viewBox="0 0 760 180" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:740px;">
+          <defs>
+            <marker id="arrowPipe" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#f59e0b"/>
+            </marker>
+          </defs>
+
+          <!-- Stage boxes -->
+          <!-- 1 -->
+          <rect x="10" y="55" width="110" height="70" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="65" y="83" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#93c5fd">Client Write</text>
+          <text x="65" y="100" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">App / DB writes</text>
+          <text x="65" y="115" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">triggered</text>
+
+          <!-- 2 -->
+          <rect x="145" y="55" width="110" height="70" rx="8" fill="#78350f" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="200" y="83" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#fcd34d">Dedup +</text>
+          <text x="200" y="99" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#fcd34d">Compress</text>
+          <text x="200" y="115" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#fde68a">Gateway layer</text>
+
+          <!-- 3 -->
+          <rect x="280" y="55" width="110" height="70" rx="8" fill="#7f1d1d" stroke="#ef4444" stroke-width="1.5"/>
+          <text x="335" y="83" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#fca5a5">🔥 Hot Tier</text>
+          <text x="335" y="99" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#fecaca">EBS gp3</text>
+          <text x="335" y="115" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#fecaca">0–30 days</text>
+
+          <!-- 4 -->
+          <rect x="415" y="55" width="110" height="70" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="470" y="83" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#93c5fd">🌡️ Warm Tier</text>
+          <text x="470" y="99" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#bfdbfe">EFS Std-IA</text>
+          <text x="470" y="115" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#bfdbfe">30–90 days</text>
+
+          <!-- 5 -->
+          <rect x="550" y="55" width="110" height="70" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+          <text x="605" y="83" text-anchor="middle" font-family="'Sora',sans-serif" font-size="11" font-weight="700" fill="#94a3b8">❄️ Cold Tier</text>
+          <text x="605" y="99" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">EFS Archive</text>
+          <text x="605" y="115" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#64748b">90 days+</text>
+
+          <!-- 6 -->
+          <rect x="685" y="55" width="65" height="70" rx="8" fill="#052e16" stroke="#10b981" stroke-width="1.5"/>
+          <text x="717" y="85" text-anchor="middle" font-family="'Sora',sans-serif" font-size="10" font-weight="700" fill="#34d399">Restore</text>
+          <text x="717" y="101" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#6ee7b7">on demand</text>
+          <text x="717" y="116" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#6ee7b7">any tier</text>
+
+          <!-- Arrows -->
+          <line x1="120" y1="90" x2="145" y2="90" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrowPipe)" class="flow-line"/>
+          <line x1="255" y1="90" x2="280" y2="90" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrowPipe)" class="flow-line"/>
+          <line x1="390" y1="90" x2="415" y2="90" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrowPipe)" class="flow-line"/>
+          <line x1="525" y1="90" x2="550" y2="90" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrowPipe)" class="flow-line"/>
+          <line x1="660" y1="90" x2="685" y2="90" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrowPipe)" class="flow-line"/>
+
+          <!-- Labels under arrows -->
+          <text x="132" y="78" text-anchor="middle" font-family="'Inter',sans-serif" font-size="8" fill="#64748b">ingest</text>
+          <text x="267" y="78" text-anchor="middle" font-family="'Inter',sans-serif" font-size="8" fill="#64748b">write</text>
+          <text x="402" y="78" text-anchor="middle" font-family="'Inter',sans-serif" font-size="8" fill="#64748b">lifecycle</text>
+          <text x="537" y="78" text-anchor="middle" font-family="'Inter',sans-serif" font-size="8" fill="#64748b">lifecycle</text>
+          <text x="672" y="78" text-anchor="middle" font-family="'Inter',sans-serif" font-size="8" fill="#64748b">retrieve</text>
+
+          <!-- Timeline bar -->
+          <rect x="10" y="145" width="640" height="6" rx="3" fill="url(#hotGrad)"/>
+          <rect x="280" y="145" width="270" height="6" rx="3" fill="url(#coolGrad)"/>
+          <rect x="415" y="145" width="135" height="6" rx="3" fill="url(#coldGrad)"/>
+          <text x="10"  y="168" font-family="'Inter',sans-serif" font-size="9" fill="#ef4444">Day 0</text>
+          <text x="270" y="168" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#fcd34d">Day 30</text>
+          <text x="420" y="168" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#60a5fa">Day 60</text>
+          <text x="550" y="168" text-anchor="middle" font-family="'Inter',sans-serif" font-size="9" fill="#94a3b8">Day 90+</text>
+        </svg>
+        <p class="svg-caption">Figure 7 — Data lifecycle pipeline: from client write through Hot → Warm → Cold tiers with on-demand restore</p>
+      </div>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart TD
+    subgraph SRC["Source Systems"]
+        A1[EC2 App Servers]
+        A2[RDS Databases]
+        A3[On-Prem Servers]
+    end
+    subgraph GW["Data Protection Layer"]
+        B[Secure Gateway / Agent<br/>Dedup + Compression + Encryption]
+    end
+    subgraph HOT["🔥 Hot Tier — Active Data"]
+        C[EBS gp3 Volumes<br/>0–30 Day Retention]
+    end
+    subgraph WARM["🌡️ Warm Tier — Recent Backup"]
+        D[EFS Standard-IA<br/>30–90 Day Retention]
+    end
+    subgraph COLD["❄️ Cold Tier — Archive"]
+        E[EFS Archive<br/>90 Day+ Retention]
+    end
+
+    A1 --> B
+    A2 --> B
+    A3 --> B
+    B --> C
+    C -->|Lifecycle policy - 30 days| D
+    D -->|Lifecycle policy - 90 days| E
+    E -->|On-demand restore| B
+        </div>
+        <p class="mermaid-caption">Figure 8 — End-to-end storage tiering flow: source systems through gateway to Hot / Warm / Cold retention pools</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 13 ══════════════════════════════════════════════════════ -->
+    <section id="interview" class="page-section">
+      <div class="section-label">📍 Section 13</div>
+      <h2 class="section-heading">Interview Q&amp;A — AWS Storage Scenarios</h2>
+      <p class="section-intro">The following scenario-based questions cover the most frequently tested concepts on AWS certification exams and in cloud architect / DevOps interviews.</p>
+
+      <div class="qa-list">
+
+        <div class="qa-item">
+          <div class="qa-q">A financial services platform requires a database storage volume with a guaranteed minimum of 80,000 IOPS and sub-millisecond response times. The database tier runs on the latest EC2 Nitro instances. Which EBS volume type should be selected and why?</div>
+          <p class="qa-a">The correct choice is <strong>io2 Block Express</strong>. It is the only EBS volume type capable of delivering up to 256,000 IOPS and sub-millisecond latency. io1 is capped at 64,000 IOPS, and gp3 peaks at 16,000 IOPS — both fall short of the 80,000 IOPS requirement. The Nitro instance hypervisor is required to unlock the full io2 performance ceiling.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">An engineering team wants to migrate existing gp2 EBS volumes to gp3. What is the key operational benefit, and is any downtime required?</div>
+          <p class="qa-a">The primary benefit is that gp3 decouples IOPS and throughput from volume size, allowing both to be scaled independently without over-provisioning storage. In gp2, IOPS grow at 3 per GB, forcing teams to increase capacity just to gain IOPS. Volume modification from gp2 to gp3 is performed in-place using the EBS Modify Volume feature — <strong>no downtime or detachment is required</strong>. The transition happens online while the volume remains attached.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">A clustered Linux application requires two EC2 instances in the same Availability Zone to simultaneously read and write to a shared block device. How should this be architected?</div>
+          <p class="qa-a">Use an <strong>io1 or io2 EBS volume with Multi-Attach enabled</strong>. Both instances can be attached to the same volume concurrently and have full read/write access. However, a <strong>cluster-aware file system</strong> (such as GFS2 or OCFS2) must be used — standard file systems like EXT4 do not handle concurrent multi-host writes safely. The 16-instance attachment limit and same-AZ requirement must also be satisfied.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">A team discovers that an existing EBS volume was created without encryption, but company policy now mandates encryption at rest for all storage. How can the volume be encrypted without losing any data?</div>
+          <p class="qa-a">The accepted process is: (1) create a snapshot of the existing unencrypted volume; (2) use the "Copy Snapshot" action with encryption enabled, selecting a KMS key; (3) create a new EBS volume from the encrypted snapshot; (4) detach the original volume and attach the new encrypted volume to the EC2 instance. There is no in-place encryption option for existing volumes. Enabling "Encryption by Default" at the account level prevents this situation for all future volumes.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">A content management platform serves 50 web servers across three Availability Zones. All servers must read and write to a shared media directory. Which storage service is most appropriate, and what configuration minimises cost while maintaining production-grade durability?</div>
+          <p class="qa-a">Amazon <strong>EFS with Regional availability</strong> is the correct choice — it is the only AWS managed file system that natively supports concurrent NFS mounts across multiple AZs. To minimise cost while maintaining durability, configure a lifecycle policy to transition files not accessed within 30 days to <strong>EFS Standard-IA</strong>, and files not accessed within 90 days to <strong>EFS Archive</strong>. This alone can reduce storage costs by up to 90% for media assets that are uploaded frequently but accessed infrequently after the first few days.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">Explain the difference between EBS and EFS in terms of availability zone scope and cross-AZ access patterns.</div>
+          <p class="qa-a">An EBS volume is tightly scoped to a <strong>single Availability Zone</strong>. It can only be attached to EC2 instances in the same AZ. Moving data to another AZ requires creating a snapshot and restoring it in the target AZ — a point-in-time copy, not live replication. EFS, by contrast, presents a <strong>single namespace accessible from any AZ within the region</strong>. Multiple mount targets allow instances across eu-west-1a, 1b, and 1c to access the same directory hierarchy simultaneously — no snapshots or data copies required.</p>
+        </div>
+
+        <div class="qa-item">
+          <div class="qa-q">A workload processes 500 GB daily log files in large sequential batches overnight. Storage costs are a primary constraint. Which EBS volume type is most cost-effective and why?</div>
+          <p class="qa-a">The <strong>st1 (Throughput Optimised HDD)</strong> volume type is the correct choice. The workload is sequential, not random — it does not require low-latency IOPS. st1 delivers up to 500 MB/s sequential throughput and 500 IOPS at a fraction of the cost of SSD volume types. It is specifically designed for throughput-intensive patterns such as log aggregation, ETL, and batch analytics. sc1 (Cold HDD) would be even cheaper but is limited to 250 MB/s throughput, which may constrain overnight batch windows.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ ABOUT ════════════════════════════════════════════════════════════ -->
+    <section id="about" class="page-section">
+      <div class="author-section">
+        <div class="author-header">
+          <div class="author-avatar">🛡️</div>
+          <div class="author-meta">
+            <h3>Mohammed Abdul</h3>
+            <div class="role">Data Protection Architect · Cloud Storage Specialist</div>
+            <p>Mohammed Abdul is a Data Protection Architect with more than 10 years of experience in Hybrid Cloud and has worked with global clients across various industries. With extensive expertise in enterprise backup and recovery solutions, Mohammed specialises in AWS, Azure, GCP, Commvault, Veeam, NetBackup, and NetApp technologies, helping organisations design and implement robust data protection strategies.</p>
+          </div>
+        </div>
+        <div class="tech-badges">
+          <span class="tech-badge">☁️ AWS</span>
+          <span class="tech-badge">🔵 Azure</span>
+          <span class="tech-badge">🟢 GCP</span>
+          <span class="tech-badge">🔶 Commvault</span>
+          <span class="tech-badge">🟢 Veeam</span>
+          <span class="tech-badge">🔷 NetBackup</span>
+          <span class="tech-badge">🟠 NetApp</span>
+          <span class="tech-badge">🏗️ Hybrid Cloud Architecture</span>
+          <span class="tech-badge">🔐 Data Protection</span>
+        </div>
+        <div>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:4px;">For queries and collaboration:</p>
+          <a class="email-card" href="mailto:abdul.md.20000102@gmail.com">
+            ✉️ &nbsp; abdul.md.20000102@gmail.com
+          </a>
+        </div>
+        <div class="disclaimer-box">
+          <strong>Disclaimer:</strong> This content is produced for educational purposes and tutorial material. All IP addresses, hostnames, and identifiers used in diagrams are illustrative and do not represent real infrastructure. Always refer to official AWS documentation and follow your organisation's security and compliance procedures for production implementations.
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /content-wrap -->
+</main>
+
+<script>
+  // Reading progress bar
+  window.addEventListener('scroll', () => {
+    const scrollTop = document.documentElement.scrollTop;
+    const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    document.getElementById('progress-bar').style.transform = `scaleX(${scrollTop / scrollHeight})`;
+  });
+
+  // Active TOC link via IntersectionObserver
+  const sections = document.querySelectorAll('.page-section');
+  const tocLinks = document.querySelectorAll('.toc-list li a');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.getAttribute('id');
+        tocLinks.forEach(link => {
+          link.classList.toggle('active', link.getAttribute('href') === `#${id}`);
+        });
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+
+  // Init Mermaid
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#1e4080',
+      primaryTextColor: '#86efac',
+      primaryBorderColor: '#60a5fa',
+      lineColor: '#94a3b8',
+      secondaryColor: '#0d1e35',
+      tertiaryColor: '#162d4a',
+      background: '#161b22',
+      mainBkg: '#1e4080',
+      nodeBorder: '#60a5fa',
+      clusterBkg: '#0d1e35',
+      clusterBorder: '#3b82f6',
+      titleColor: '#86efac',
+      edgeLabelBackground: '#162d4a',
+      attributeBackgroundColorEven: '#1e4080',
+      attributeBackgroundColorOdd: '#162d4a'
+    },
+    flowchart: { htmlLabels: true, curve: 'basis' }
+  });
+</script>
+</body>
+</html>

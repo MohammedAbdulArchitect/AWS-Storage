@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Object Storage Lifecycle, Events &amp; Performance | Cloud Storage Tutorial Series</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-card: #1c2230;
+    --bg-sidebar: #111827;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border-color: #2d3748;
+    --border-bright: #374151;
+    --sidebar-width: 280px;
+    --header-height: 64px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    display: flex;
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  /* ── Sidebar ─────────────────────────────── */
+  .sidebar {
+    width: var(--sidebar-width);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    overflow-y: auto;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar-logo {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .sidebar-logo .brand {
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-cyan);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .sidebar-logo .subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 3px;
+  }
+
+  .toc-title {
+    padding: 16px 20px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .toc-list { list-style: none; padding: 0 8px 20px; }
+
+  .toc-list li a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 400;
+    transition: all 0.2s;
+  }
+
+  .toc-list li a:hover,
+  .toc-list li a.active {
+    background: rgba(59,130,246,0.12);
+    color: var(--accent-blue);
+  }
+
+  .toc-list li a .icon { font-size: 14px; width: 18px; flex-shrink: 0; }
+  .toc-list li a .num {
+    font-size: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--text-muted);
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .toc-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 8px 20px;
+  }
+
+  /* ── Main Content ────────────────────────── */
+  .main-content {
+    margin-left: var(--sidebar-width);
+    flex: 1;
+    min-height: 100vh;
+  }
+
+  /* Top header bar */
+  .page-header {
+    background: linear-gradient(135deg, #0f1f3d 0%, #0d1a2e 50%, #081525 100%);
+    border-bottom: 1px solid var(--border-color);
+    padding: 56px 60px 48px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .page-header::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .page-header::after {
+    content: '';
+    position: absolute;
+    bottom: -80px; left: 200px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(6,182,212,0.07) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(59,130,246,0.15);
+    border: 1px solid rgba(59,130,246,0.3);
+    color: var(--accent-blue);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 20px;
+  }
+
+  .page-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 36px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+
+  .page-title span { color: var(--accent-cyan); }
+
+  .page-subtitle {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin-bottom: 28px;
+  }
+
+  .header-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .tag {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .tag-blue { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+  .tag-cyan { background: rgba(6,182,212,0.12); color: #22d3ee; border: 1px solid rgba(6,182,212,0.25); }
+  .tag-green { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+  .tag-amber { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+
+  /* Content area */
+  .content-wrap {
+    max-width: 900px;
+    padding: 48px 60px 80px;
+  }
+
+  /* Section headings */
+  .section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(6,182,212,0.08);
+    border: 1px solid rgba(6,182,212,0.2);
+    color: var(--accent-cyan);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  h2.section-heading {
+    font-family: 'Sora', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+    padding-top: 4px;
+  }
+
+  .section-intro {
+    color: var(--text-secondary);
+    font-size: 15px;
+    margin-bottom: 28px;
+    max-width: 700px;
+  }
+
+  h3 {
+    font-family: 'Sora', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: #e2e8f0;
+    margin: 28px 0 12px;
+  }
+
+  h4 {
+    font-family: 'Sora', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: #cbd5e1;
+    margin: 20px 0 8px;
+  }
+
+  p { margin-bottom: 14px; color: var(--text-secondary); }
+
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+
+  .card-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Product grid */
+  .product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin: 20px 0 28px;
+  }
+
+  .product-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .product-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+
+  .product-card.blue::before { background: var(--accent-blue); }
+  .product-card.cyan::before { background: var(--accent-cyan); }
+  .product-card.green::before { background: var(--accent-green); }
+  .product-card.amber::before { background: var(--accent-amber); }
+  .product-card.purple::before { background: var(--accent-purple); }
+  .product-card.red::before { background: var(--accent-red); }
+
+  .product-card:hover {
+    border-color: var(--border-bright);
+    transform: translateY(-2px);
+  }
+
+  .product-card .pname {
+    font-family: 'Sora', sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+
+  .product-card .pfull {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 10px;
+  }
+
+  .product-card .pbadge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+
+  .product-card .pdesc { font-size: 13px; color: var(--text-secondary); margin: 0; }
+  .product-card .pos { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+
+  .badge-unified { background: rgba(16,185,129,0.15); color: #34d399; }
+  .badge-san { background: rgba(245,158,11,0.15); color: #fcd34d; }
+  .badge-nas { background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .badge-object { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+  .badge-sw { background: rgba(6,182,212,0.15); color: #67e8f9; }
+
+  /* Callout boxes */
+  .callout {
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    display: flex;
+    gap: 14px;
+  }
+
+  .callout-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+
+  .callout-body { flex: 1; }
+  .callout-title { font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+  .callout-text { font-size: 13.5px; margin: 0; line-height: 1.6; }
+
+  .callout.tip { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25); }
+  .callout.tip .callout-title { color: #34d399; }
+  .callout.tip .callout-text { color: #a7f3d0; }
+
+  .callout.warning { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); }
+  .callout.warning .callout-title { color: #fcd34d; }
+  .callout.warning .callout-text { color: #fde68a; }
+
+  .callout.info { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); }
+  .callout.info .callout-title { color: #93c5fd; }
+  .callout.info .callout-text { color: #bfdbfe; }
+
+  .callout.exam { background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.25); }
+  .callout.exam .callout-title { color: #c4b5fd; }
+  .callout.exam .callout-text { color: #ddd6fe; }
+
+  .callout.note { background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2); }
+  .callout.note .callout-title { color: #67e8f9; }
+  .callout.note .callout-text { color: #cffafe; }
+
+  /* Code blocks */
+  pre, code {
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  pre {
+    background: #0a0f1a;
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--accent-blue);
+    border-radius: 6px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    font-size: 13px;
+    color: #a5d8ff;
+    margin: 14px 0;
+    line-height: 1.6;
+  }
+
+  code {
+    background: rgba(59,130,246,0.1);
+    color: #93c5fd;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+
+  pre code { background: none; color: inherit; padding: 0; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    font-size: 14px;
+  }
+
+  thead th {
+    background: var(--bg-secondary);
+    color: var(--accent-cyan);
+    font-family: 'Sora', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 12px 16px;
+    border-bottom: 2px solid var(--border-color);
+    text-align: left;
+  }
+
+  tbody td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    vertical-align: top;
+  }
+
+  tbody tr:hover td { background: rgba(59,130,246,0.04); }
+
+  tbody td:first-child { color: #e2e8f0; font-weight: 500; }
+
+  /* Section separator */
+  .section-sep {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 52px 0 44px;
+  }
+
+  /* Vendor pill row */
+  .vendor-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 18px 0 24px;
+  }
+
+  .vendor-pill {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .vendor-pill.top { border-color: var(--accent-blue); color: var(--accent-blue); }
+
+  /* ONTAP history timeline */
+  .timeline {
+    position: relative;
+    padding-left: 24px;
+    margin: 20px 0;
+  }
+
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px; top: 0; bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--accent-blue), var(--accent-cyan), var(--accent-green));
+    border-radius: 2px;
+  }
+
+  .tl-item {
+    position: relative;
+    margin-bottom: 18px;
+  }
+
+  .tl-item::before {
+    content: '';
+    position: absolute;
+    left: -20px; top: 8px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    border: 2px solid var(--bg-primary);
+  }
+
+  .tl-item.active::before { background: var(--accent-green); }
+  .tl-item.deprecated::before { background: var(--text-muted); }
+
+  .tl-version {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-cyan);
+  }
+
+  .tl-desc { font-size: 13px; color: var(--text-secondary); }
+
+  /* HA Pair comparison */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+
+  .compare-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .compare-card.danger { border-color: rgba(239,68,68,0.3); }
+  .compare-card.success { border-color: rgba(16,185,129,0.3); }
+
+  .compare-card h4 { margin-top: 0; }
+
+  .compare-card ul {
+    list-style: none;
+    margin-top: 10px;
+  }
+
+  .compare-card ul li {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .compare-card ul li:last-child { border-bottom: none; }
+  .compare-card ul li::before { content: ''; flex-shrink: 0; }
+
+  .compare-card.danger ul li::before { content: '✗'; color: var(--accent-red); }
+  .compare-card.success ul li::before { content: '✓'; color: var(--accent-green); }
+
+  /* Steps */
+  .steps-list {
+    counter-reset: step-counter;
+    list-style: none;
+    margin: 16px 0;
+  }
+
+  .steps-list li {
+    counter-increment: step-counter;
+    display: flex;
+    gap: 14px;
+    margin-bottom: 14px;
+    align-items: flex-start;
+  }
+
+  .steps-list li::before {
+    content: counter(step-counter);
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .steps-list li span { font-size: 14px; color: var(--text-secondary); }
+
+  /* Mermaid */
+  .mermaid-wrap {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 20px 0;
+    overflow-x: auto;
+  }
+
+  .mermaid-caption {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 10px;
+    font-style: italic;
+  }
+
+  /* ══ Mermaid: comprehensive dark-theme fix — all diagram types ══ */
+  /* TEXT COLOR: #86efac (light green) everywhere, no exceptions      */
+
+  /* ── 1. Every SVG text/tspan element ─────────────────────────── */
+  .mermaid svg text,
+  .mermaid svg tspan {
+    fill: #86efac !important;
+    color: #86efac !important;
+    stroke: none !important;
+  }
+
+  /* ── 2. Named text roles ──────────────────────────────────────── */
+  .mermaid svg .label,
+  .mermaid svg .label text,
+  .mermaid svg .label tspan,
+  .mermaid svg .nodeLabel,
+  .mermaid svg .nodeLabel text,
+  .mermaid svg .edgeLabel,
+  .mermaid svg .edgeLabel text,
+  .mermaid svg .edgeLabel tspan,
+  .mermaid svg .messageText,
+  .mermaid svg .loopText,
+  .mermaid svg .loopText tspan,
+  .mermaid svg .noteText,
+  .mermaid svg .noteText tspan,
+  .mermaid svg .actor text,
+  .mermaid svg .actor tspan,
+  .mermaid svg .labelText,
+  .mermaid svg .labelText tspan,
+  .mermaid svg .cluster-label text,
+  .mermaid svg .cluster-label tspan,
+  .mermaid svg .titleText,
+  .mermaid svg .sectionTitle,
+  .mermaid svg .taskText,
+  .mermaid svg .taskTextOutsideRight,
+  .mermaid svg .taskTextOutsideLeft,
+  .mermaid svg .task-state-text,
+  .mermaid svg .statediagramLabel text {
+    fill: #86efac !important;
+    color: #86efac !important;
+    stroke: none !important;
+  }
+
+  /* ── 3. foreignObject HTML labels (flowchart node text) ──────── */
+  .mermaid foreignObject div,
+  .mermaid foreignObject span,
+  .mermaid foreignObject p,
+  .mermaid foreignObject label,
+  .mermaid foreignObject .nodeLabel,
+  .mermaid foreignObject .label,
+  .mermaid foreignObject .edgeLabel {
+    color: #86efac !important;
+    background: transparent !important;
+  }
+
+  /* ── 4. Edge label wrapper ────────────────────────────────────── */
+  .mermaid svg .edgeLabel rect,
+  .mermaid svg .edgeLabel foreignObject {
+    fill: #162d4a !important;
+    background: #162d4a !important;
+  }
+  .mermaid svg .edgeLabel span,
+  .mermaid svg .edgeLabel p {
+    background: #162d4a !important;
+    color: #86efac !important;
+  }
+
+  /* ── 5. Flowchart node shapes ─────────────────────────────────── */
+  .mermaid svg .node rect,
+  .mermaid svg .node circle,
+  .mermaid svg .node ellipse,
+  .mermaid svg .node polygon,
+  .mermaid svg .node path {
+    fill: #1e4080 !important;
+    stroke: #60a5fa !important;
+    stroke-width: 1.5px !important;
+  }
+
+  /* ── 6. Subgraph / cluster backgrounds ───────────────────────── */
+  .mermaid svg .cluster rect,
+  .mermaid svg .cluster polygon,
+  .mermaid svg .subgraph rect {
+    fill: #0d1e35 !important;
+    stroke: #3b82f6 !important;
+    stroke-width: 1px !important;
+  }
+
+  /* ── 7. Timeline diagram — section bars & task boxes ─────────── */
+  /* Override ALL colored fills mermaid generates for timeline       */
+  .mermaid svg rect,
+  .mermaid svg polygon {
+    /* only override fills that look like colored section bars       */
+  }
+  .mermaid svg .timeline-section,
+  .mermaid svg .section,
+  .mermaid svg rect.section,
+  .mermaid svg .mermaid-timeline rect,
+  .mermaid svg .period rect,
+  .mermaid svg [class*="section0"],
+  .mermaid svg [class*="section1"],
+  .mermaid svg [class*="section2"],
+  .mermaid svg [class*="section3"],
+  .mermaid svg [class*="section4"],
+  .mermaid svg [class*="section5"],
+  .mermaid svg .cScale0 rect,
+  .mermaid svg .cScale1 rect,
+  .mermaid svg .cScale2 rect,
+  .mermaid svg .cScale3 rect,
+  .mermaid svg .cScale4 rect,
+  .mermaid svg .cScale5 rect,
+  .mermaid svg .cScale6 rect,
+  .mermaid svg .cScale7 rect {
+    fill: #1e4080 !important;
+    stroke: #60a5fa !important;
+  }
+  /* Timeline label text specifically */
+  .mermaid svg .cScale0 text,
+  .mermaid svg .cScale1 text,
+  .mermaid svg .cScale2 text,
+  .mermaid svg .cScale3 text,
+  .mermaid svg .cScale4 text,
+  .mermaid svg .cScale5 text,
+  .mermaid svg .cScale6 text,
+  .mermaid svg .cScale7 text,
+  .mermaid svg [class*="section"] text,
+  .mermaid svg [class*="section"] tspan {
+    fill: #86efac !important;
+    color: #86efac !important;
+  }
+
+  /* ── 8. Actor boxes (sequence diagrams) ──────────────────────── */
+  .mermaid svg .actor {
+    fill: #1e4080 !important;
+    stroke: #60a5fa !important;
+  }
+
+  /* ── 9. Note boxes ────────────────────────────────────────────── */
+  .mermaid svg .note,
+  .mermaid svg rect.note {
+    fill: #0f3a5a !important;
+    stroke: #06b6d4 !important;
+  }
+
+  /* ── 10. Connector lines ─────────────────────────────────────── */
+  .mermaid svg .edge-pattern-solid,
+  .mermaid svg .edge-pattern-dotted,
+  .mermaid svg .flowchart-link,
+  .mermaid svg .messageLine0,
+  .mermaid svg .messageLine1,
+  .mermaid svg line.actor,
+  .mermaid svg line {
+    stroke: #94a3b8 !important;
+  }
+
+  /* ── 11. Edge paths — stroke only, never fill ────────────────── */
+  .mermaid svg path.edge-pattern-solid,
+  .mermaid svg path.flowchart-link,
+  .mermaid svg path[class*="edge"],
+  .mermaid svg path[class*="arrow"],
+  .mermaid svg path[class*="path"] {
+    stroke: #94a3b8 !important;
+    fill: none !important;
+  }
+
+  /* ── 12. Arrowhead markers ───────────────────────────────────── */
+  .mermaid svg marker path,
+  .mermaid svg marker polygon,
+  .mermaid svg .arrowMarkerPath,
+  .mermaid svg defs marker path,
+  .mermaid svg defs marker polygon {
+    fill: #94a3b8 !important;
+    stroke: #94a3b8 !important;
+  }
+
+  /* Interview Q&A */
+  .qa-list { margin: 16px 0; }
+
+  .qa-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+  }
+
+  .qa-q {
+    font-weight: 600;
+    color: #e2e8f0;
+    font-size: 14px;
+    margin-bottom: 10px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .qa-q::before { content: 'Q'; background: var(--accent-blue); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 3px; font-family: 'Sora', sans-serif; flex-shrink: 0; margin-top: 2px; }
+
+  .qa-a {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    padding-left: 28px;
+    line-height: 1.7;
+    margin: 0;
+  }
+
+  /* About author */
+  .author-section {
+    background: linear-gradient(135deg, #0f1f3d 0%, #0d1a2e 100%);
+    border: 1px solid rgba(59,130,246,0.25);
+    border-radius: 12px;
+    padding: 32px;
+    margin-top: 56px;
+  }
+
+  .author-header {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+
+  .author-avatar {
+    width: 70px; height: 70px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+
+  .author-meta h3 { margin: 0 0 4px; font-size: 20px; color: #fff; }
+  .author-meta .role { font-size: 13px; color: var(--accent-cyan); margin-bottom: 8px; }
+  .author-meta p { font-size: 14px; color: var(--text-secondary); margin: 0; }
+
+  .tech-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 16px 0;
+  }
+
+  .tech-badge {
+    background: rgba(59,130,246,0.12);
+    border: 1px solid rgba(59,130,246,0.25);
+    color: #93c5fd;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .email-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(6,182,212,0.08);
+    border: 1px solid rgba(6,182,212,0.25);
+    padding: 10px 16px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--accent-cyan);
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.2s;
+    margin-top: 8px;
+  }
+
+  .email-card:hover { background: rgba(6,182,212,0.14); }
+
+  .disclaimer-box {
+    background: rgba(245,158,11,0.06);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-top: 20px;
+    font-size: 12.5px;
+    color: #fde68a;
+    line-height: 1.6;
+  }
+
+  .disclaimer-box strong { color: #fcd34d; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main-content { margin-left: 0; }
+    .page-header { padding: 36px 24px 32px; }
+    .content-wrap { padding: 32px 24px 60px; }
+    .page-title { font-size: 26px; }
+    .compare-grid { grid-template-columns: 1fr; }
+    .product-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Highlight */
+  .highlight { color: var(--accent-cyan); font-weight: 600; }
+
+  ul.bullet-list {
+    list-style: none;
+    margin: 10px 0;
+  }
+
+  ul.bullet-list li {
+    font-size: 14px;
+    color: var(--text-secondary);
+    padding: 5px 0;
+    padding-left: 18px;
+    position: relative;
+  }
+
+  ul.bullet-list li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    color: var(--accent-cyan);
+    font-size: 12px;
+  }
+
+  .inline-flex { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  .page-section { scroll-margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<!-- ═══ SIDEBAR ═══════════════════════════════════════════════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="brand">☁️ Cloud Storage Tutorials</div>
+    <div class="subtitle">Object Storage · Lifecycle & Performance</div>
+  </div>
+  <div class="toc-title">Table of Contents</div>
+  <ul class="toc-list">
+    <li><a href="#lifecycle"><span class="icon">🔄</span> Storage Class Transitions <span class="num">01</span></a></li>
+    <li><a href="#lifecycle-hands-on"><span class="icon">🛠️</span> Lifecycle Rule Configuration <span class="num">02</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#requester-pays"><span class="icon">💳</span> Requester Pays Buckets <span class="num">03</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#events"><span class="icon">📡</span> Event Notifications <span class="num">04</span></a></li>
+    <li><a href="#events-hands-on"><span class="icon">🧩</span> Event Notification Walkthrough <span class="num">05</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#performance"><span class="icon">⚡</span> Performance Optimization <span class="num">06</span></a></li>
+    <li><a href="#batch"><span class="icon">📦</span> Batch Operations <span class="num">07</span></a></li>
+    <li><a href="#storage-lens"><span class="icon">🔍</span> Storage Lens <span class="num">08</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#interview"><span class="icon">💼</span> Interview Q&amp;A <span class="num">09</span></a></li>
+    <li><a href="#about"><span class="icon">👤</span> About the Author <span class="num">10</span></a></li>
+  </ul>
+</nav>
+
+<main class="main-content">
+
+  <div class="page-header">
+    <div class="header-badge">☁️ Object Storage Tutorial Series</div>
+    <h1 class="page-title">Object Storage Lifecycle, Events<br><span>& Performance Optimization</span></h1>
+    <p class="page-subtitle">A practical guide to automating storage-class transitions, reacting to storage events in real time, and squeezing maximum throughput out of an object storage platform — written for cloud and data-protection engineers.</p>
+    <div class="header-tags">
+      <span class="tag tag-blue">Platform: S3-Compatible Object Storage</span>
+      <span class="tag tag-cyan">Level: Associate</span>
+      <span class="tag tag-green">Hands-On Labs Included</span>
+      <span class="tag tag-amber">Interview Prep Included</span>
+    </div>
+  </div>
+
+  <div class="content-wrap">
+
+    <!-- ══ SECTION 01: Lifecycle / Storage Class Transitions ══════════════ -->
+    <section id="lifecycle" class="page-section">
+      <div class="section-label">📍 Section 01</div>
+      <h2 class="section-heading">Storage Class Transitions &amp; Lifecycle Rules</h2>
+      <p class="section-intro">Object storage platforms offer several storage tiers, each with different cost and retrieval characteristics. Rather than moving objects between tiers by hand, <strong>lifecycle rules</strong> let you automate the journey of an object from the moment it's created until the moment it's deleted.</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+  A[Standard] --> B[Standard-IA]
+  A --> C[Intelligent-Tiering]
+  B --> C
+  C --> D[One-Zone-IA]
+  D --> E[Flexible Retrieval / Glacier]
+  D --> F[Deep Archive]
+  E --> F
+        </div>
+        <p class="mermaid-caption">Figure 1 — Permitted storage-class transition paths inside a lifecycle policy</p>
+      </div>
+
+      <div class="callout note">
+        <div class="callout-icon">💡</div>
+        <div class="callout-body">
+          <div class="callout-title">Two Building Blocks of a Lifecycle Rule</div>
+          <p class="callout-text"><strong>Transition actions</strong> move an object to a cheaper class after N days (e.g. "move to Standard-IA after 60 days, then to Glacier after 180 days"). <strong>Expiration actions</strong> delete an object, an old version, or an incomplete multi-part upload after N days (e.g. "delete access logs after 365 days" or "abort multi-part uploads older than 14 days").</p>
+        </div>
+      </div>
+
+      <p>Rules can be scoped to an entire bucket, to a specific key <strong>prefix</strong> (a sub-path), or to objects carrying a specific <strong>tag</strong> — which lets one bucket host several independent lifecycle strategies side by side.</p>
+
+      <div class="callout exam">
+        <div class="callout-icon">💼</div>
+        <div class="callout-body">
+          <div class="callout-title">Worked Scenario</div>
+          <p class="callout-text">An application generates a full-resolution photo plus a thumbnail. The thumbnail is cheap to regenerate and only needs to survive 60 days; the original must stay instantly retrievable for those same 60 days, after which a multi-hour retrieval delay is acceptable. <strong>Design:</strong> store both under one bucket using two prefixes — <code>originals/</code> stays on the Standard class with a transition to Glacier Flexible Retrieval after 60 days; <code>thumbnails/</code> goes to One-Zone-IA with an expiration action that deletes it after 60 days.</p>
+        </div>
+      </div>
+
+      <p>A second common scenario combines lifecycle rules with <strong>versioning</strong>: a 30-day instant-recovery window for deleted objects (handled by the delete marker that versioning creates), followed by a rule that moves non-current versions to Standard-IA and later to Glacier Deep Archive for up to 365 days of recoverability.</p>
+
+      <div class="callout tip">
+        <div class="callout-icon">🏆</div>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice — Let Analytics Pick the Numbers</div>
+          <p class="callout-text">Don't guess the "after N days" thresholds. Built-in storage-class analytics tools (covering the Standard and Standard-IA classes only — not One-Zone-IA or Glacier) produce a daily-updated report with access-pattern statistics. Allow 24–48 hours after enabling analytics before the first useful data appears, then use it to tune or build new lifecycle rules.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 02: Lifecycle Hands-On ══════════════════════════════════ -->
+    <section id="lifecycle-hands-on" class="page-section">
+      <div class="section-label">📍 Section 02</div>
+      <h2 class="section-heading">Configuring a Lifecycle Rule — Step by Step</h2>
+      <p class="section-intro">Lifecycle rules are created from the bucket's management settings. A single rule can combine up to five independent actions:</p>
+
+      <div class="product-grid">
+        <div class="product-card blue">
+          <div class="pname">Action 1</div>
+          <div class="pfull">Transition current versions</div>
+          <p class="pdesc">Move the live/current version of an object between storage classes on a schedule.</p>
+        </div>
+        <div class="product-card cyan">
+          <div class="pname">Action 2</div>
+          <div class="pfull">Transition non-current versions</div>
+          <p class="pdesc">Move superseded (overwritten) versions of versioned objects to cheaper tiers.</p>
+        </div>
+        <div class="product-card amber">
+          <div class="pname">Action 3</div>
+          <div class="pfull">Expire current versions</div>
+          <p class="pdesc">Delete the live version of an object after it reaches a defined age.</p>
+        </div>
+        <div class="product-card red">
+          <div class="pname">Action 4</div>
+          <div class="pfull">Permanently delete non-current versions</div>
+          <p class="pdesc">Hard-delete old versions once they are no longer useful for recovery.</p>
+        </div>
+        <div class="product-card purple">
+          <div class="pname">Action 5</div>
+          <div class="pfull">Clean up incomplete uploads &amp; markers</div>
+          <p class="pdesc">Remove expired delete markers and abort stalled multi-part uploads.</p>
+        </div>
+      </div>
+
+      <div class="timeline">
+        <div class="mermaid">
+timeline
+  title Sample Lifecycle Timeline for a Versioned Bucket
+  Day 0 : Object created (current version)
+  Day 30 : Transition to Standard-IA
+  Day 60 : Transition to Intelligent-Tiering
+  Day 90 : Transition to Glacier Instant Retrieval ; Non-current versions move to Glacier Flexible Retrieval
+  Day 180 : Transition to Glacier Flexible Retrieval
+  Day 365 : Transition to Glacier Deep Archive
+  Day 700 : Current version expires ; Non-current versions permanently deleted
+        </div>
+      </div>
+
+      <pre><code># Example: lifecycle policy snippet (JSON)
+{
+  "Rules": [
+    {
+      "ID": "tiered-retention-policy",
+      "Filter": { "Prefix": "originals/" },
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 30, "StorageClass": "STANDARD_IA" },
+        { "Days": 90, "StorageClass": "GLACIER" }
+      ],
+      "Expiration": { "Days": 700 }
+    }
+  ]
+}</code></pre>
+
+      <div class="callout note">
+        <div class="callout-icon">📝</div>
+        <div class="callout-body">
+          <div class="callout-title">Notes</div>
+          <p class="callout-text">Once a rule is reviewed and confirmed, it runs entirely in the background — there is nothing to operate day-to-day. The console (or API) will always show a visual timeline preview before you commit the rule, which is the easiest way to sanity-check the transition order.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 03: Requester Pays ══════════════════════════════════════ -->
+    <section id="requester-pays" class="page-section">
+      <div class="section-label">📍 Section 03</div>
+      <h2 class="section-heading">Requester Pays Buckets</h2>
+      <p class="section-intro">By default, the <strong>bucket owner</strong> pays for both storage and the data-transfer costs generated whenever someone downloads an object. <strong>Requester Pays</strong> flips the second half of that bill onto whoever is downloading the data.</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+  subgraph Default["Default Billing"]
+    direction LR
+    O1["Bucket Owner"] -->|pays storage + transfer| B1["Bucket"]
+    R1["Requester"] -->|downloads, free| B1
+  end
+  subgraph RP["Requester Pays Enabled"]
+    direction LR
+    O2["Bucket Owner"] -->|pays storage only| B2["Bucket"]
+    R2["Authenticated Requester"] -->|pays transfer cost| B2
+  end
+        </div>
+        <p class="mermaid-caption">Figure 2 — Billing responsibility shifts for data transfer when Requester Pays is enabled</p>
+      </div>
+
+      <div class="callout warning">
+        <div class="callout-icon">⚠️</div>
+        <div class="callout-body">
+          <div class="callout-title">Authentication Is Mandatory</div>
+          <p class="callout-text">The requester must be an <strong>authenticated, signed-in identity</strong> — never anonymous — because the platform needs an identity to bill for the download. This makes Requester Pays a great fit for sharing large public-interest datasets across accounts without absorbing everyone else's bandwidth cost.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 04: Event Notifications ════════════════════════════════ -->
+    <section id="events" class="page-section">
+      <div class="section-label">📍 Section 04</div>
+      <h2 class="section-heading">Event Notifications</h2>
+      <p class="section-intro">Object storage platforms emit <strong>events</strong> for activity such as object creation, removal, restoration, or replication. Subscribing to these events lets you react automatically — for example, generating a thumbnail the instant an image is uploaded.</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+  S3["Object Storage Bucket"] --> N1["Notification Topic (Pub/Sub)"]
+  S3 --> N2["Message Queue"]
+  S3 --> N3["Serverless Function"]
+  S3 --> EB["Central Event Bus"]
+  EB --> D1["18+ Downstream Services"]
+  EB --> D2["Workflow Orchestration"]
+  EB --> D3["Streaming Pipelines"]
+        </div>
+        <p class="mermaid-caption">Figure 3 — Event fan-out from a bucket to direct targets and to a central event bus</p>
+      </div>
+
+      <div class="product-grid">
+        <div class="product-card blue">
+          <div class="pname">Topic</div>
+          <div class="pfull">Pub/Sub Notification Topic</div>
+          <p class="pdesc">Fan an event out to many subscribers at once. Requires a resource access policy on the topic authorizing the bucket to publish.</p>
+        </div>
+        <div class="product-card cyan">
+          <div class="pname">Queue</div>
+          <div class="pfull">Message Queue</div>
+          <p class="pdesc">Buffer events for asynchronous, decoupled processing. Also requires a resource access policy granting the bucket send-message rights.</p>
+        </div>
+        <div class="product-card amber">
+          <div class="pname">Function</div>
+          <div class="pfull">Serverless Function</div>
+          <p class="pdesc">Invoke custom code directly on each event. Requires a resource policy granting the storage service invoke permission.</p>
+        </div>
+        <div class="product-card green">
+          <div class="pname">Event Bus</div>
+          <div class="pfull">Central Event Bus Integration</div>
+          <p class="pdesc">Every bucket event lands here automatically, unlocking rule-based routing, advanced filtering by metadata/size/name, multi-destination delivery, replay, and archival.</p>
+        </div>
+      </div>
+
+      <div class="callout note">
+        <div class="callout-icon">💡</div>
+        <div class="callout-body">
+          <div class="callout-title">Key Concept — Resource Policies, Not Identity Roles</div>
+          <p class="callout-text">Notification delivery is authorized with a <strong>resource-based access policy</strong> attached to the topic, queue, or function — not an identity role attached to the storage service. This mirrors how a bucket policy itself works: the permission lives on the resource being written to.</p>
+        </div>
+      </div>
+
+      <p>Delivery is typically near-instant — within seconds — though it can occasionally take a minute or longer under load. Notifications can be filtered by event type as well as by key prefix/suffix (e.g. only <code>.jpg</code> uploads).</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 05: Event Notifications Hands-On ═══════════════════════ -->
+    <section id="events-hands-on" class="page-section">
+      <div class="section-label">📍 Section 05</div>
+      <h2 class="section-heading">Wiring Up a Notification — Walkthrough</h2>
+      <p class="section-intro">The following walkthrough wires object-creation events from a bucket named <code>media-platform-events-prod</code> into a message queue, so a downstream worker can generate thumbnails.</p>
+
+      <ol class="steps-list">
+        <li><strong>Create the bucket.</strong> A fresh bucket, <code>media-platform-events-prod</code>, is created in the target region.</li>
+        <li><strong>Open the notification settings.</strong> Under the bucket's properties, two options exist: configure individual notifications to specific targets, or simply forward all events to the central event bus.</li>
+        <li><strong>Create the queue first.</strong> A message queue, <code>media-thumbnail-queue</code>, is provisioned before the notification rule, since the rule needs a target to point at.</li>
+        <li><strong>Define the notification rule.</strong> Name it, optionally scope it with a prefix/suffix, select <em>All object create events</em> (or a narrower subset), and choose the queue as the destination.</li>
+        <li><strong>Fix the access-denied error.</strong> The first save attempt typically fails because the queue doesn't yet trust the bucket. A resource policy must be attached to the queue allowing the bucket's ARN to send messages.</li>
+        <li><strong>Re-save and verify.</strong> Once the policy is in place, the rule saves successfully, and a test connectivity message immediately appears in the queue.</li>
+        <li><strong>Trigger a real event.</strong> Uploading an object (e.g. <code>coffee-cup.jpg</code>) produces a queue message containing an <code>ObjectCreated:Put</code> event type and the object's key — exactly the payload a thumbnail-generation worker would consume.</li>
+      </ol>
+
+      <div class="callout warning">
+        <div class="callout-icon">🔒</div>
+        <div class="callout-body">
+          <div class="callout-title">Warning — Scope the Access Policy</div>
+          <p class="callout-text">For demonstration purposes a permissive "allow any sender" policy gets things working quickly, but in production the queue's resource policy should be scoped to the exact bucket ARN, not left open to any source.</p>
+        </div>
+      </div>
+
+      <p class="qa-a" style="margin-top:8px;">Outcome: the bucket, the queue, and the access policy together form a working event pipeline — any object creation now lands as a structured message ready for downstream automation.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 06: Performance ═════════════════════════════════════════ -->
+    <section id="performance" class="page-section">
+      <div class="section-label">📍 Section 06</div>
+      <h2 class="section-heading">Performance Optimization</h2>
+      <p class="section-intro">Object storage scales automatically to a very large number of requests, typically returning the first byte in roughly 100–200 ms. Per-prefix request limits are generous: around <strong>3,500 write-type requests/sec</strong> (PUT/COPY/POST/DELETE) and <strong>5,500 read-type requests/sec</strong> (GET/HEAD), and there is no limit on the number of prefixes a bucket can have.</p>
+
+      <div class="callout note">
+        <div class="callout-icon">📝</div>
+        <div class="callout-body">
+          <div class="callout-title">What "Per Prefix" Really Means</div>
+          <p class="callout-text">A prefix is everything between the bucket name and the object's filename. <code>region-a/site-01/report.csv</code> and <code>region-a/site-02/report.csv</code> are two different prefixes, each independently entitled to the full request-rate allowance. Spreading reads evenly across four prefixes can yield roughly 22,000 read requests/sec in aggregate.</p>
+        </div>
+      </div>
+
+      <h3 style="margin-top:28px; color:var(--accent-cyan); font-size:18px;">Multi-Part Upload</h3>
+      <p>Recommended above 100 MB and required above 5 GB, multi-part upload splits a large file into chunks that upload in parallel, then reassembles them server-side once every part has arrived.</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+  F["Large File"] --> P1["Part 1"]
+  F --> P2["Part 2"]
+  F --> P3["Part 3"]
+  F --> P4["Part N"]
+  P1 --> S["Object Storage"]
+  P2 --> S
+  P3 --> S
+  P4 --> S
+  S --> R["Reassembled Object"]
+        </div>
+        <p class="mermaid-caption">Figure 4 — Multi-part upload parallelizes a large file as independent parts</p>
+      </div>
+
+      <h3 style="margin-top:28px; color:var(--accent-cyan); font-size:18px;">Transfer Acceleration</h3>
+      <p>For long-haul uploads/downloads, transfer acceleration routes traffic through the nearest of 200+ edge locations over the public internet, then carries it the rest of the way across the provider's private backbone network — minimizing the public-internet hop and maximizing the private, low-latency one. It is fully compatible with multi-part upload.</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+  C["Client — Region X"] -->|public internet, short hop| E["Nearest Edge Location"]
+  E -->|private backbone network| B["Bucket — Region Y"]
+        </div>
+        <p class="mermaid-caption">Figure 5 — Transfer acceleration minimizes public-internet distance traveled</p>
+      </div>
+
+      <h3 style="margin-top:28px; color:var(--accent-cyan); font-size:18px;">Byte-Range Fetches</h3>
+      <p>Reading large objects can also be parallelized by requesting specific byte ranges concurrently — and a failed range can be retried independently, improving resilience. The same technique lets you fetch just a known header segment (e.g. the first 50 bytes) instead of downloading the entire object.</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+  Obj["Large Object"] --> R1["Range: bytes 0-999"]
+  Obj --> R2["Range: bytes 1000-1999"]
+  Obj --> R3["Range: bytes 2000-end"]
+  R1 --> Cl["Client (parallel reassembly)"]
+  R2 --> Cl
+  R3 --> Cl
+        </div>
+        <p class="mermaid-caption">Figure 6 — Parallel byte-range GET requests speed up large downloads</p>
+      </div>
+
+      <div class="callout tip">
+        <div class="callout-icon">🏆</div>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice</div>
+          <p class="callout-text">Combine techniques: use multi-part upload for large outbound transfers, transfer acceleration for cross-region/cross-continent traffic, and byte-range fetches when only a portion of an object — or maximum parallel throughput on a download — is needed.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 07: Batch Operations ════════════════════════════════════ -->
+    <section id="batch" class="page-section">
+      <div class="section-label">📍 Section 07</div>
+      <h2 class="section-heading">Batch Operations</h2>
+      <p class="section-intro">Batch operations apply a single action — encrypting unencrypted objects, copying between buckets, updating ACLs/tags, restoring from cold storage, or invoking a custom function — across a large list of existing objects in one managed job.</p>
+
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+  Inv["Storage Inventory Report"] --> Query["Query Engine (filter objects)"]
+  Query --> List["Filtered Object List"]
+  List --> Job["Batch Job: Action + Parameters"]
+  Job --> Done["Objects Updated + Completion Report"]
+        </div>
+        <p class="mermaid-caption">Figure 7 — Building a filtered object list, then running it through a batch job</p>
+      </div>
+
+      <div class="callout note">
+        <div class="callout-icon">💡</div>
+        <div class="callout-body">
+          <div class="callout-title">Why Not Just Script It?</div>
+          <p class="callout-text">A managed batch job adds automatic retry handling, progress tracking, completion notifications, and reporting — capabilities you would otherwise have to build yourself in a custom script.</p>
+        </div>
+      </div>
+
+      <p>A classic exam-style use case: generate an inventory report, filter it with a query engine down to every <em>unencrypted</em> object, then feed that filtered list into a batch job that encrypts everything at once.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 08: Storage Lens ════════════════════════════════════════ -->
+    <section id="storage-lens" class="page-section">
+      <div class="section-label">📍 Section 08</div>
+      <h2 class="section-heading">Storage Analytics &amp; Lens Dashboards</h2>
+      <p class="section-intro">An organization-wide analytics service aggregates usage and activity metrics across accounts, regions, buckets, and prefixes — surfacing anomalies, cost-efficiency opportunities, and data-protection gaps from a single dashboard.</p>
+
+      <div class="product-grid">
+        <div class="product-card blue">
+          <div class="pname">Summary</div>
+          <div class="pfull">Summary Metrics</div>
+          <p class="pdesc">Storage bytes and object counts — useful for spotting fast-growing or stagnant buckets/prefixes.</p>
+        </div>
+        <div class="product-card cyan">
+          <div class="pname">Cost</div>
+          <div class="pfull">Cost-Optimization Metrics</div>
+          <p class="pdesc">Non-current-version storage, incomplete multi-part upload bytes — spot cleanup and tiering opportunities.</p>
+        </div>
+        <div class="product-card amber">
+          <div class="pname">Protection</div>
+          <div class="pfull">Data Protection Metrics</div>
+          <p class="pdesc">Versioning, MFA-delete, encryption, and cross-region replication coverage across buckets.</p>
+        </div>
+        <div class="product-card red">
+          <div class="pname">Access</div>
+          <div class="pfull">Access Management Metrics</div>
+          <p class="pdesc">Object-ownership settings in use across the bucket fleet.</p>
+        </div>
+        <div class="product-card purple">
+          <div class="pname">Events</div>
+          <div class="pfull">Event Metrics</div>
+          <p class="pdesc">Coverage of event-notification configuration across buckets.</p>
+        </div>
+        <div class="product-card green">
+          <div class="pname">Activity</div>
+          <div class="pfull">Activity &amp; Status-Code Metrics</div>
+          <p class="pdesc">Request counts, bytes transferred, and HTTP status-code breakdowns (paid tier).</p>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr><th>Tier</th><th>Coverage</th><th>Retention</th><th>Extra Capabilities</th></tr></thead>
+        <tbody>
+          <tr><td>Free</td><td>~28 usage metrics</td><td>14 days</td><td>Default dashboard, multi-account/region view</td></tr>
+          <tr><td>Advanced</td><td>Free metrics + activity, advanced cost &amp; protection, status codes</td><td>15 months</td><td>Prefix-level granularity, metrics published to a monitoring service at no extra charge</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout note">
+        <div class="callout-icon">📝</div>
+        <div class="callout-body">
+          <div class="callout-title">Notes</div>
+          <p class="callout-text">The default dashboard already spans every account and region — there's no setup required to get started, and while it can be disabled, it cannot be deleted. Reports can be exported to a bucket in CSV or Parquet format for downstream analysis.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 09: Interview Q&A ════════════════════════════════════════ -->
+    <section id="interview" class="page-section">
+      <div class="section-label">📍 Section 09</div>
+      <h2 class="section-heading">Scenario-Based Interview Q&amp;A</h2>
+      <p class="section-intro">Work through each scenario before reading the answer — these mirror the style of questions asked of cloud storage and data-protection engineers.</p>
+
+      <div class="qa-list">
+        <div class="qa-item">
+          <div class="qa-q">A media company stores millions of thumbnails that are cheap to regenerate but rarely accessed after 60 days, alongside source images that must stay instantly retrievable. How do you design the lifecycle policy?</div>
+          <p class="qa-a">Separate the two by prefix. Keep source images on the Standard class with a transition to a cold-archive tier after 60 days (accepting a multi-hour retrieval delay thereafter). Move thumbnails to a low-cost, single-zone tier immediately and set an expiration action to delete them after 60 days, since they can be regenerated on demand from the source image.</p>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">Why would a dataset owner enable Requester Pays instead of just sharing the bucket normally?</div>
+          <p class="qa-a">Sharing a large public-interest dataset normally leaves the owner paying every download's data-transfer cost, which becomes unsustainable at scale. Requester Pays shifts that transfer cost onto each authenticated downloader while the owner continues paying only for storage — making it economically viable to share large datasets broadly.</p>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">Your event notification to a message queue keeps failing to save with an access-denied style error. What's the most likely cause and fix?</div>
+          <p class="qa-a">The queue does not yet have a resource-based access policy authorizing the bucket to publish messages. The fix is to attach a policy to the queue (not a role to the bucket) explicitly allowing the bucket's ARN to send messages — the same pattern applies to topics and functions used as notification targets.</p>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">A 50 GB file needs to move from an on-premises data center to a bucket on the other side of the world as fast as possible. What two features would you combine?</div>
+          <p class="qa-a">Multi-part upload (required well above the 5 GB threshold) to parallelize the transfer into chunks, combined with transfer acceleration to route the upload through the nearest edge location and across the provider's private backbone for the long-haul portion — the two are explicitly compatible with each other.</p>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">How would you find and remediate every unencrypted object across a 50-million-object bucket without writing a custom crawler?</div>
+          <p class="qa-a">Generate a storage inventory report to enumerate every object, run it through a query engine to filter down to objects lacking server-side encryption, then pass that filtered list into a managed batch operation configured to apply encryption — gaining built-in retry handling, progress tracking, and a completion report for free.</p>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">Leadership wants a single view of storage cost and risk across 40 AWS-style accounts without building custom tooling. What would you recommend, and what's the catch?</div>
+          <p class="qa-a">An organization-wide storage analytics/lens service, using its default multi-account, multi-region dashboard for an immediate baseline view of summary, cost-optimization, and data-protection metrics at no extra cost. The catch: the free tier only retains 14 days of history and lacks activity/status-code metrics — if leadership wants 15 months of retention or per-prefix granularity, the advanced (paid) tier is required.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ ABOUT THE AUTHOR ════════════════════════════════════════════════ -->
+    <section id="about" class="page-section">
+      <div class="author-section">
+        <div class="author-header">
+          <div class="author-avatar">👨‍💻</div>
+          <div class="author-meta">
+            <h3>Mohammed Abdul</h3>
+            <div class="role">Data Protection Architect — 10+ Years Experience</div>
+            <p>Mohammed Abdul is a Data Protection Architect with more than 10 years of experience in Hybrid Cloud environments, working with global clients across Financial Services, Healthcare, Government, and Manufacturing industries.</p>
+          </div>
+        </div>
+
+        <p style="color: var(--text-secondary); font-size: 14px;">With extensive expertise in enterprise backup, recovery, and storage solutions, Mohammed specializes in designing and implementing robust data protection strategies across cloud and on-premises environments.</p>
+
+        <div class="tech-badges">
+          <span class="tech-badge">☁️ AWS</span>
+          <span class="tech-badge">🔷 Azure</span>
+          <span class="tech-badge">🟢 GCP</span>
+          <span class="tech-badge">🔵 Commvault</span>
+          <span class="tech-badge">🟢 Veeam</span>
+          <span class="tech-badge">🟠 Veritas NetBackup</span>
+          <span class="tech-badge">🗄️ NetApp</span>
+          <span class="tech-badge">⚡ Dell EMC</span>
+        </div>
+
+        <div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">For questions or collaborations:</p>
+          <a href="mailto:abdul.md.20000102@gmail.com" class="email-card">
+            ✉️ abdul.md.20000102@gmail.com
+          </a>
+        </div>
+
+        <div class="disclaimer-box">
+          <strong>⚠️ Disclaimer:</strong> This content is created for educational purposes as independent tutorial material. All technical concepts are expressed in original language. Always refer to official provider documentation and follow your organization's change management procedures for any production implementations. Bucket names, queue names, and configuration examples used throughout this tutorial are illustrative and should not be used in production without adaptation to your environment.
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /content-wrap -->
+</main><!-- /main-content -->
+  </div><!-- /content-wrap -->
+</main><!-- /main-content -->
+
+<script>
+  // Initialize Mermaid
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#1e4080',
+      primaryTextColor: '#86efac',
+      primaryBorderColor: '#60a5fa',
+      lineColor: '#94a3b8',
+      arrowheadColor: '#94a3b8',
+      secondaryColor: '#1e3a5f',
+      tertiaryColor: '#163354',
+      background: '#0d1117',
+      mainBkg: '#1e4080',
+      nodeBorder: '#60a5fa',
+      clusterBkg: '#0f2040',
+      clusterBorder: '#475569',
+      titleColor: '#86efac',
+      edgeLabelBackground: '#1e3a5f',
+      fontSize: '13px',
+      fontFamily: 'Inter, sans-serif',
+      actorBkg: '#1e4080',
+      actorBorder: '#60a5fa',
+      actorTextColor: '#86efac',
+      actorLineColor: '#94a3b8',
+      labelBoxBkgColor: '#1e4080',
+      labelBoxBorderColor: '#60a5fa',
+      labelTextColor: '#86efac',
+      loopTextColor: '#86efac',
+      noteBkgColor: '#0f3a5a',
+      noteBorderColor: '#06b6d4',
+      noteTextColor: '#86efac',
+      activationBkgColor: '#1e4080',
+      activationBorderColor: '#60a5fa',
+      messageTextColor: '#86efac',
+      signalColor: '#94a3b8',
+      signalTextColor: '#86efac',
+      sequenceNumberColor: '#86efac',
+      darkMode: true,
+      /* Timeline cScale — all sections use our blue, text stays green */
+      cScale0: '#1e4080', cScale1: '#1e4080', cScale2: '#1e4080',
+      cScale3: '#1e4080', cScale4: '#1e4080', cScale5: '#1e4080',
+      cScale6: '#1e4080', cScale7: '#1e4080', cScale8: '#1e4080',
+      cScale9: '#1e4080', cScale10: '#1e4080', cScale11: '#1e4080',
+      cScaleLabel0: '#86efac', cScaleLabel1: '#86efac', cScaleLabel2: '#86efac',
+      cScaleLabel3: '#86efac', cScaleLabel4: '#86efac', cScaleLabel5: '#86efac'
+    },
+    flowchart: { curve: 'basis', padding: 16 },
+    sequence: { useMaxWidth: true, boxMargin: 8 }
+  });
+
+  // ── Post-render fix: enforce #86efac text on ALL mermaid diagrams ──
+  function fixMermaidLabels() {
+    const GREEN  = '#86efac';
+    const NODE_BG = '#1e4080';
+    const BORDER  = '#60a5fa';
+
+    // 1. Every SVG text / tspan — force fill attribute directly
+    document.querySelectorAll('.mermaid svg text, .mermaid svg tspan').forEach(el => {
+      el.setAttribute('fill', GREEN);
+      el.style.fill  = GREEN;
+      el.style.color = GREEN;
+    });
+
+    // 2. foreignObject HTML content (flowchart node labels)
+    document.querySelectorAll('.mermaid foreignObject *').forEach(el => {
+      el.style.color      = GREEN;
+      el.style.background = 'transparent';
+    });
+
+    // 3. Timeline colored rects — override every colored section/task rect
+    //    Mermaid timeline uses cScale classes and inline style fills
+    document.querySelectorAll('.mermaid svg rect, .mermaid svg polygon').forEach(el => {
+      const cls = el.getAttribute('class') || '';
+      const isEdge   = cls.includes('edge') || cls.includes('arrow') || cls.includes('path');
+      const isMarker = el.closest('marker');
+      if (!isEdge && !isMarker) {
+        // Only override if it has a fill that isn't already our dark bg or transparent
+        const fill = el.getAttribute('fill') || el.style.fill || '';
+        const isCluster = cls.includes('cluster') || cls.includes('subgraph');
+        if (!isCluster) {
+          el.setAttribute('fill', NODE_BG);
+          el.setAttribute('stroke', BORDER);
+          el.style.fill   = NODE_BG;
+          el.style.stroke = BORDER;
+        }
+      }
+    });
+
+    // 4. Re-apply text color after rect overrides (rects don't affect text,
+    //    but run again to catch any late-rendered labels)
+    document.querySelectorAll('.mermaid svg text, .mermaid svg tspan').forEach(el => {
+      el.setAttribute('fill', GREEN);
+    });
+  }
+
+  // Run on load, then once more after a short delay to catch async renders
+  window.addEventListener('load', () => {
+    setTimeout(fixMermaidLabels, 400);
+    setTimeout(fixMermaidLabels, 1200);
+  });
+
+  // Active TOC highlight on scroll

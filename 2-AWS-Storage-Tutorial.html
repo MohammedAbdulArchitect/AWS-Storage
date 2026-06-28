@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS EC2 Storage Deep Dive — EBS, Snapshots, AMI & Instance Store</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@300;400;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
+  :root {
+    --bg-primary:#0d1117;--bg-secondary:#161b22;--bg-card:#1c2333;
+    --accent-blue:#58a6ff;--accent-green:#3fb950;--accent-orange:#f78166;
+    --accent-purple:#bc8cff;--accent-yellow:#e3b341;--accent-teal:#39d3c3;
+    --text-primary:#e6edf3;--text-secondary:#8b949e;--text-muted:#6e7681;
+    --border:#30363d;--border-bright:#484f58;--sidebar-width:290px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth}
+  body{font-family:'Inter',sans-serif;background:var(--bg-primary);color:var(--text-primary);display:flex;min-height:100vh}
+  #reading-progress{position:fixed;top:0;left:var(--sidebar-width);right:0;height:3px;background:linear-gradient(90deg,var(--accent-teal),var(--accent-blue),var(--accent-purple));transform-origin:left;transform:scaleX(0);z-index:999;transition:transform .1s linear}
+  .sidebar{width:var(--sidebar-width);background:var(--bg-secondary);border-right:1px solid var(--border);position:fixed;top:0;left:0;height:100vh;overflow-y:auto;z-index:100;display:flex;flex-direction:column}
+  .sidebar-header{padding:20px 16px;border-bottom:1px solid var(--border);background:var(--bg-secondary);position:sticky;top:0;z-index:10}
+  .sidebar-logo{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .sidebar-logo .logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent-orange),var(--accent-yellow));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+  .sidebar-logo span{font-family:'Sora',sans-serif;font-weight:700;font-size:14px;color:var(--text-primary);letter-spacing:.5px}
+  .sidebar-subtitle{font-size:11px;color:var(--text-muted);padding-left:42px}
+  .toc-nav{padding:12px 0;flex:1}
+  .toc-section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-muted);padding:12px 16px 6px}
+  .toc-link{display:flex;align-items:center;gap:8px;padding:7px 16px;font-size:12.5px;color:var(--text-secondary);text-decoration:none;transition:all .2s ease;border-left:2px solid transparent;line-height:1.4}
+  .toc-link:hover{background:var(--bg-card);color:var(--text-primary);border-left-color:var(--accent-orange)}
+  .toc-link.active{background:rgba(247,129,102,.1);color:var(--accent-orange);border-left-color:var(--accent-orange);font-weight:500}
+  .toc-link .toc-num{font-size:10px;font-weight:700;color:var(--text-muted);min-width:18px;font-family:'JetBrains Mono',monospace}
+  .toc-link.sub{padding-left:32px;font-size:12px}
+  .series-nav{padding:12px 16px;border-top:1px solid var(--border)}
+  .series-nav-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:8px}
+  .series-link{display:block;padding:5px 8px;font-size:11.5px;color:var(--text-secondary);text-decoration:none;border-radius:5px;transition:all .2s;margin-bottom:2px}
+  .series-link:hover{background:var(--bg-card);color:var(--accent-teal)}
+  .series-link.current{color:var(--accent-orange);font-weight:600}
+  .main-content{margin-left:var(--sidebar-width);flex:1;max-width:calc(100vw - var(--sidebar-width))}
+  .top-header{background:linear-gradient(135deg,#0d1117 0%,#0a0e1a 50%,#0d1117 100%);border-bottom:1px solid var(--border);padding:60px 60px 50px;position:relative;overflow:hidden}
+  .top-header::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 70% 50%,rgba(247,129,102,.07) 0%,transparent 60%),radial-gradient(ellipse at 20% 80%,rgba(88,166,255,.06) 0%,transparent 50%)}
+  .header-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(247,129,102,.12);border:1px solid rgba(247,129,102,.3);border-radius:20px;padding:4px 14px;font-size:12px;color:var(--accent-orange);font-weight:500;margin-bottom:18px;font-family:'JetBrains Mono',monospace}
+  .main-title{font-family:'Sora',sans-serif;font-size:36px;font-weight:800;line-height:1.15;margin-bottom:16px;background:linear-gradient(135deg,#e6edf3 20%,#f78166 55%,#e3b341 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;position:relative}
+  .header-desc{font-size:15px;color:var(--text-secondary);line-height:1.7;max-width:700px;position:relative}
+  .header-meta{display:flex;gap:24px;flex-wrap:wrap;margin-top:20px;position:relative}
+  .meta-chip{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-secondary)}
+  .meta-chip .dot{width:8px;height:8px;border-radius:50%}
+  .prog-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;position:relative}
+  .prog-chip{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
+  .content-area{padding:40px 60px 80px;max-width:1020px}
+  .section{margin-bottom:64px;scroll-margin-top:30px}
+  .section-header{display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+  .section-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;margin-top:2px}
+  .icon-teal{background:rgba(57,211,195,.15);border:1px solid rgba(57,211,195,.3)}
+  .icon-blue{background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.3)}
+  .icon-green{background:rgba(63,185,80,.15);border:1px solid rgba(63,185,80,.3)}
+  .icon-orange{background:rgba(247,129,102,.15);border:1px solid rgba(247,129,102,.3)}
+  .icon-purple{background:rgba(188,140,255,.15);border:1px solid rgba(188,140,255,.3)}
+  .icon-yellow{background:rgba(227,179,65,.15);border:1px solid rgba(227,179,65,.3)}
+  .section-title-wrap h2{font-family:'Sora',sans-serif;font-size:24px;font-weight:700;color:var(--text-primary);line-height:1.2}
+  .section-title-wrap .section-num{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);font-weight:400;margin-bottom:4px}
+  .card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px;transition:border-color .2s}
+  .card:hover{border-color:var(--border-bright)}
+  .card-title{font-family:'Sora',sans-serif;font-weight:600;font-size:15px;color:var(--text-primary);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  p{font-size:14.5px;line-height:1.8;color:var(--text-secondary);margin-bottom:14px}
+  .callout{border-radius:10px;padding:16px 20px;margin:20px 0;display:flex;gap:14px;align-items:flex-start}
+  .callout-icon{font-size:18px;margin-top:1px;flex-shrink:0}
+  .callout-content{flex:1}
+  .callout-title{font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+  .callout-text{font-size:13.5px;line-height:1.7;color:var(--text-secondary)}
+  .callout.info{background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25)}.callout.info .callout-title{color:var(--accent-blue)}
+  .callout.success{background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.25)}.callout.success .callout-title{color:var(--accent-green)}
+  .callout.warning{background:rgba(227,179,65,.08);border:1px solid rgba(227,179,65,.3)}.callout.warning .callout-title{color:var(--accent-yellow)}
+  .callout.danger{background:rgba(247,129,102,.08);border:1px solid rgba(247,129,102,.3)}.callout.danger .callout-title{color:var(--accent-orange)}
+  .callout.tip{background:rgba(188,140,255,.08);border:1px solid rgba(188,140,255,.25)}.callout.tip .callout-title{color:var(--accent-purple)}
+  .callout.teal{background:rgba(57,211,195,.08);border:1px solid rgba(57,211,195,.25)}.callout.teal .callout-title{color:var(--accent-teal)}
+  .code-block{background:#080c10;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin:16px 0}
+  .code-header{background:var(--bg-secondary);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;justify-content:space-between}
+  .code-lang{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace}
+  .code-dots{display:flex;gap:5px}.code-dots span{width:10px;height:10px;border-radius:50%}
+  .dot-red{background:#ff5f56}.dot-ylw{background:#ffbd2e}.dot-grn{background:#27c93f}
+  .code-body{padding:20px;font-size:12.5px;line-height:1.85;color:#79c0ff;overflow-x:auto;white-space:pre;font-family:'JetBrains Mono',monospace}
+  .code-body .cmd{color:#3fb950}.code-body .comment{color:#6e7681;font-style:italic}
+  .code-body .param{color:#ffa657}.code-body .value{color:#a5d6ff}
+  .code-body .output{color:#8b949e}.code-body .prompt{color:#e3b341}.code-body .hl{color:#39d3c3}
+  .spec-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+  .spec-table th{background:var(--bg-secondary);color:var(--text-secondary);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .spec-table td{padding:11px 16px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle}
+  .spec-table tr:hover td{background:rgba(255,255,255,.02)}
+  .badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11.5px;font-weight:600;font-family:'JetBrains Mono',monospace}
+  .badge-blue{background:rgba(88,166,255,.15);color:var(--accent-blue);border:1px solid rgba(88,166,255,.3)}
+  .badge-green{background:rgba(63,185,80,.15);color:var(--accent-green);border:1px solid rgba(63,185,80,.3)}
+  .badge-orange{background:rgba(247,129,102,.15);color:var(--accent-orange);border:1px solid rgba(247,129,102,.3)}
+  .badge-yellow{background:rgba(227,179,65,.15);color:var(--accent-yellow);border:1px solid rgba(227,179,65,.3)}
+  .badge-teal{background:rgba(57,211,195,.15);color:var(--accent-teal);border:1px solid rgba(57,211,195,.3)}
+  .badge-purple{background:rgba(188,140,255,.15);color:var(--accent-purple);border:1px solid rgba(188,140,255,.3)}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:16px 0}
+  .stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px;text-align:center}
+  .stat-num{font-family:'Sora',sans-serif;font-size:28px;font-weight:800;margin-bottom:4px}
+  .stat-label{font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+  .step-list{list-style:none;margin:12px 0}
+  .step-list li{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(48,54,61,.5);font-size:13.5px;color:var(--text-secondary);line-height:1.6;align-items:flex-start}
+  .step-list li:last-child{border-bottom:none}
+  .step-num{width:22px;height:22px;border-radius:6px;background:rgba(247,129,102,.15);border:1px solid rgba(247,129,102,.3);color:var(--accent-orange);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;font-family:'JetBrains Mono',monospace}
+  .bullet-list{list-style:none;margin:10px 0}
+  .bullet-list li{padding:6px 0 6px 20px;position:relative;font-size:13.5px;color:var(--text-secondary);line-height:1.6}
+  .bullet-list li::before{content:'▸';position:absolute;left:0;color:var(--accent-orange);font-size:11px;top:8px}
+  h3{font-family:'Sora',sans-serif;font-size:17px;font-weight:600;color:var(--text-primary);margin:24px 0 12px}
+  h4{font-family:'Sora',sans-serif;font-size:14px;font-weight:600;color:var(--accent-orange);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.5px}
+  .diagram-wrap{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px;margin:20px 0;overflow-x:auto}
+  .diagram-caption{text-align:center;font-size:12px;color:var(--text-muted);margin-top:12px;font-style:italic}
+  .mermaid{display:flex;justify-content:center}
+  .svg-wrap{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px;margin:20px 0;overflow:hidden}
+  .quiz-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:22px;margin-bottom:16px}
+  .quiz-q{font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:12px}
+  .quiz-a{display:none;background:rgba(247,129,102,.06);border:1px solid rgba(247,129,102,.2);border-radius:8px;padding:14px 16px;margin-top:10px;font-size:13.5px;color:var(--text-secondary);line-height:1.7}
+  .quiz-btn{background:rgba(247,129,102,.1);border:1px solid rgba(247,129,102,.3);color:var(--accent-orange);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all .2s}
+  .quiz-btn:hover{background:rgba(247,129,102,.2)}
+  .author-card{background:linear-gradient(135deg,#161b22,#1c2333);border:1px solid var(--border);border-radius:16px;padding:32px;margin-top:40px;position:relative;overflow:hidden}
+  .author-card::before{content:'';position:absolute;top:-40px;right:-40px;width:180px;height:180px;background:radial-gradient(circle,rgba(247,129,102,.08),transparent 70%);border-radius:50%}
+  .author-avatar{font-size:48px;margin-bottom:12px}
+  .author-name{font-family:'Sora',sans-serif;font-size:22px;font-weight:700;color:var(--text-primary);margin-bottom:4px}
+  .author-title{font-size:13px;color:var(--accent-orange);margin-bottom:16px;font-family:'JetBrains Mono',monospace}
+  .author-bio{font-size:14px;color:var(--text-secondary);line-height:1.7;margin-bottom:20px}
+  .tech-badges{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+  .tech-badge{background:rgba(247,129,102,.1);border:1px solid rgba(247,129,102,.25);color:var(--accent-orange);border-radius:20px;padding:3px 12px;font-size:12px;font-family:'JetBrains Mono',monospace}
+  .contact-link{display:inline-flex;align-items:center;gap:8px;background:rgba(247,129,102,.1);border:1px solid rgba(247,129,102,.3);color:var(--accent-orange);border-radius:8px;padding:8px 16px;font-size:13px;text-decoration:none;transition:all .2s;margin-bottom:20px}
+  .contact-link:hover{background:rgba(247,129,102,.2)}
+  .disclaimer{background:rgba(227,179,65,.06);border:1px solid rgba(227,179,65,.25);border-radius:10px;padding:16px 20px;margin-top:20px;font-size:12.5px;color:var(--text-muted);line-height:1.7}
+  /* Animated dashed data flow lines */
+  @keyframes dash-flow{to{stroke-dashoffset:-24}}
+  .flow-line{stroke-dasharray:8 4;animation:dash-flow 1.2s linear infinite}
+  .flow-line-slow{stroke-dasharray:10 5;animation:dash-flow 2s linear infinite}
+  .node-hover{transition:filter .2s}
+  .node-hover:hover{filter:drop-shadow(0 0 8px rgba(88,166,255,.5))}
+  @media(max-width:900px){.sidebar{transform:translateX(-100%)}.main-content{margin-left:0;max-width:100vw}.top-header{padding:30px 20px}.content-area{padding:20px}.grid-2,.grid-3{grid-template-columns:1fr}#reading-progress{left:0}}
+</style>
+</head>
+<body>
+<div id="reading-progress"></div>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <div class="logo-icon">💾</div>
+      <span>AWS Storage Deep Dive</span>
+    </div>
+    <div class="sidebar-subtitle">EBS · Snapshots · AMI · Instance Store</div>
+  </div>
+  <div class="toc-nav">
+    <div class="toc-section-label">Block Storage</div>
+    <a class="toc-link" href="#s1"><span class="toc-num">01</span>EBS — Elastic Block Store</a>
+    <a class="toc-link sub" href="#s1-arch"><span class="toc-num">↳</span>Architecture & AZ Binding</a>
+    <a class="toc-link sub" href="#s1-term"><span class="toc-num">↳</span>Delete-on-Termination</a>
+    <a class="toc-link" href="#s2"><span class="toc-num">02</span>EBS Volume Types</a>
+    <a class="toc-link sub" href="#s2-gp"><span class="toc-num">↳</span>GP2 vs GP3</a>
+    <a class="toc-link sub" href="#s2-table"><span class="toc-num">↳</span>Comparison Table</a>
+
+    <div class="toc-section-label">Data Protection</div>
+    <a class="toc-link" href="#s3"><span class="toc-num">03</span>EBS Snapshots</a>
+    <a class="toc-link sub" href="#s3-arch"><span class="toc-num">↳</span>Snapshot Architecture</a>
+    <a class="toc-link sub" href="#s3-feat"><span class="toc-num">↳</span>Archive, Recycle Bin & FSR</a>
+    <a class="toc-link" href="#s4"><span class="toc-num">04</span>Cross-Region DR Strategy</a>
+
+    <div class="toc-section-label">Machine Images</div>
+    <a class="toc-link" href="#s5"><span class="toc-num">05</span>AMI — Amazon Machine Images</a>
+    <a class="toc-link sub" href="#s5-types"><span class="toc-num">↳</span>AMI Sources & Types</a>
+    <a class="toc-link sub" href="#s5-flow"><span class="toc-num">↳</span>Build & Deploy Workflow</a>
+    <a class="toc-link" href="#s6"><span class="toc-num">06</span>AMI Best Practices</a>
+
+    <div class="toc-section-label">High-Performance Storage</div>
+    <a class="toc-link" href="#s7"><span class="toc-num">07</span>EC2 Instance Store</a>
+    <a class="toc-link sub" href="#s7-perf"><span class="toc-num">↳</span>Performance Benchmarks</a>
+    <a class="toc-link sub" href="#s7-use"><span class="toc-num">↳</span>Use Cases & Tradeoffs</a>
+
+    <div class="toc-section-label">Retention Architecture</div>
+    <a class="toc-link" href="#s8"><span class="toc-num">08</span>Hot / Cool / Cold Tiers</a>
+    <a class="toc-link sub" href="#s8-diag"><span class="toc-num">↳</span>Block Diagram</a>
+    <a class="toc-link sub" href="#s8-pipe"><span class="toc-num">↳</span>Data Lifecycle Pipeline</a>
+
+    <div class="toc-section-label">Reference</div>
+    <a class="toc-link" href="#s9"><span class="toc-num">09</span>CLI Quick Reference</a>
+    <a class="toc-link" href="#s10"><span class="toc-num">10</span>Interview Q&amp;A</a>
+    <a class="toc-link" href="#author"><span class="toc-num">★</span>About the Author</a>
+  </div>
+  <div class="series-nav">
+    <div class="series-nav-title">AWS Tutorial Series</div>
+    <a class="series-link" href="#">📋 Series Index</a>
+    <a class="series-link current" href="#">▶ EC2 Storage — EBS, AMI &amp; More</a>
+  </div>
+</nav>
+
+<!-- MAIN CONTENT -->
+<div class="main-content">
+<header class="top-header">
+  <div class="header-badge">☁️ AWS Tutorial · EC2 Storage — EBS, Snapshots, AMI &amp; Instance Store</div>
+  <h1 class="main-title">AWS EC2 Block Storage:<br>EBS, Snapshots, AMI &amp; Instance Store</h1>
+  <p class="header-desc">A comprehensive technical guide to AWS block storage for EC2. Covers Elastic Block Store (EBS) architecture, snapshot-based disaster recovery, Amazon Machine Image (AMI) lifecycle management, instance store performance characteristics, and cloud-native storage tiering strategies for production workloads.</p>
+  <div class="header-meta">
+    <div class="meta-chip"><span class="dot" style="background:var(--accent-orange)"></span>EBS Volumes</div>
+    <div class="meta-chip"><span class="dot" style="background:var(--accent-blue)"></span>Snapshots &amp; DR</div>
+    <div class="meta-chip"><span class="dot" style="background:var(--accent-green)"></span>AMI Lifecycle</div>
+    <div class="meta-chip"><span class="dot" style="background:var(--accent-purple)"></span>Instance Store</div>
+    <div class="meta-chip"><span class="dot" style="background:var(--accent-teal)"></span>Storage Tiers</div>
+  </div>
+  <div class="prog-chips">
+    <span class="prog-chip">AWS EC2</span>
+    <span class="prog-chip">EBS GP2/GP3</span>
+    <span class="prog-chip">io1/io2</span>
+    <span class="prog-chip">EBS Snapshots</span>
+    <span class="prog-chip">AMI</span>
+    <span class="prog-chip">Instance Store</span>
+    <span class="prog-chip">S3 Glacier</span>
+    <span class="prog-chip">Data Lifecycle</span>
+  </div>
+</header>
+
+<div class="content-area">
+
+<!-- ===== SECTION 1: EBS OVERVIEW ===== -->
+<section class="section" id="s1">
+  <div class="section-header">
+    <div class="section-icon icon-orange">💾</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 01</div>
+      <h2>Elastic Block Store (EBS) — Core Concepts</h2>
+    </div>
+  </div>
+
+  <p>Elastic Block Store (EBS) is AWS's network-attached block storage service for EC2 instances. Unlike a physical drive soldered to a server, an EBS volume connects over the network fabric, making it detachable and reassignable without downtime. Data persists independently of the instance lifecycle — terminating a virtual machine does not automatically destroy the attached volume (unless explicitly configured to do so).</p>
+
+  <p>Think of EBS as a high-performance network USB drive: you can unplug it from one machine and re-attach it to another within the same availability zone, and your data is exactly where you left it.</p>
+
+  <div class="grid-3">
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--accent-orange)">1</div>
+      <div class="stat-label">Max AZ per Volume</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--accent-blue)">1</div>
+      <div class="stat-label">Instance per Volume (CCP)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--accent-green)">∞</div>
+      <div class="stat-label">Volumes per Instance</div>
+    </div>
+  </div>
+
+  <h3 id="s1-arch">Architecture — AZ Binding &amp; Multi-Volume Attachment</h3>
+
+  <!-- SVG: EBS Architecture Diagram -->
+  <div class="svg-wrap">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:860px;display:block;margin:0 auto">
+      <defs>
+        <marker id="arrowB" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#f78166"/></marker>
+        <marker id="arrowG" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#3fb950"/></marker>
+        <marker id="arrowGr" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#484f58"/></marker>
+        <linearGradient id="azGrad1" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#1c2333"/>
+          <stop offset="100%" style="stop-color:#161b22"/>
+        </linearGradient>
+        <linearGradient id="azGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#1c2333"/>
+          <stop offset="100%" style="stop-color:#161b22"/>
+        </linearGradient>
+      </defs>
+
+      <!-- AZ-1 Container -->
+      <rect x="20" y="20" width="510" height="260" rx="14" fill="url(#azGrad1)" stroke="#f78166" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="36" y="44" fill="#f78166" font-size="11" font-weight="700" font-family="JetBrains Mono,monospace">us-east-1a</text>
+
+      <!-- EC2 Instance 1 -->
+      <rect x="44" y="60" width="160" height="90" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="124" y="84" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="700" font-family="Sora,sans-serif">EC2 Instance</text>
+      <text x="124" y="100" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">app-server-01</text>
+      <text x="124" y="136" text-anchor="middle" fill="#58a6ff" font-size="22">🖥️</text>
+
+      <!-- EC2 Instance 2 -->
+      <rect x="44" y="174" width="160" height="90" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="124" y="198" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="700" font-family="Sora,sans-serif">EC2 Instance</text>
+      <text x="124" y="214" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">db-server-01</text>
+      <text x="124" y="248" text-anchor="middle" fill="#58a6ff" font-size="22">🖥️</text>
+
+      <!-- Arrows to EBS volumes -->
+      <line x1="204" y1="100" x2="274" y2="100" stroke="#f78166" stroke-width="2" marker-end="url(#arrowB)"/>
+      <line x1="204" y1="100" x2="274" y2="155" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrowG)" stroke-dasharray="4,2"/>
+      <line x1="204" y1="210" x2="274" y2="210" stroke="#f78166" stroke-width="2" marker-end="url(#arrowB)"/>
+
+      <!-- EBS Volume 1 (Primary) -->
+      <rect x="274" y="68" width="120" height="64" rx="8" fill="#0d1117" stroke="#f78166" stroke-width="1.5"/>
+      <text x="334" y="90" text-anchor="middle" fill="#f78166" font-size="11" font-weight="700" font-family="Sora,sans-serif">EBS Vol-A</text>
+      <text x="334" y="106" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">100 GB · gp3</text>
+      <text x="334" y="122" text-anchor="middle" fill="#3fb950" font-size="10" font-family="JetBrains Mono,monospace">● In Use</text>
+
+      <!-- EBS Volume 2 (Secondary to Instance 1) -->
+      <rect x="274" y="138" width="120" height="64" rx="8" fill="#0d1117" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="334" y="160" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700" font-family="Sora,sans-serif">EBS Vol-B</text>
+      <text x="334" y="176" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">50 GB · gp3</text>
+      <text x="334" y="192" text-anchor="middle" fill="#3fb950" font-size="10" font-family="JetBrains Mono,monospace">● In Use</text>
+
+      <!-- EBS Volume 3 (for Instance 2) -->
+      <rect x="274" y="178" width="120" height="64" rx="8" fill="#0d1117" stroke="#f78166" stroke-width="1.5"/>
+      <text x="334" y="200" text-anchor="middle" fill="#f78166" font-size="11" font-weight="700" font-family="Sora,sans-serif">EBS Vol-C</text>
+      <text x="334" y="216" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">200 GB · io2</text>
+      <text x="334" y="232" text-anchor="middle" fill="#3fb950" font-size="10" font-family="JetBrains Mono,monospace">● In Use</text>
+
+      <!-- Unattached EBS volume -->
+      <rect x="274" y="248" width="120" height="26" rx="6" fill="#0d1117" stroke="#484f58" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <text x="334" y="265" text-anchor="middle" fill="#6e7681" font-size="10" font-family="JetBrains Mono,monospace">EBS Vol-D · Available</text>
+
+      <!-- Network label -->
+      <text x="234" y="94" text-anchor="middle" fill="#f78166" font-size="9" font-family="Inter,sans-serif">Network</text>
+
+      <!-- AZ-2 Container -->
+      <rect x="560" y="20" width="280" height="180" rx="14" fill="url(#azGrad2)" stroke="#484f58" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="576" y="44" fill="#6e7681" font-size="11" font-weight="700" font-family="JetBrains Mono,monospace">us-east-1b  ← Different AZ</text>
+
+      <!-- EC2 in AZ2 -->
+      <rect x="580" y="60" width="140" height="80" rx="10" fill="#0d1117" stroke="#484f58" stroke-width="1.5"/>
+      <text x="650" y="84" text-anchor="middle" fill="#8b949e" font-size="12" font-weight="700" font-family="Sora,sans-serif">EC2 Instance</text>
+      <text x="650" y="100" text-anchor="middle" fill="#6e7681" font-size="10" font-family="JetBrains Mono,monospace">web-server-02</text>
+      <text x="650" y="128" text-anchor="middle" fill="#484f58" font-size="22">🖥️</text>
+
+      <!-- Blocked cross-AZ arrow -->
+      <line x1="530" y1="105" x2="580" y2="105" stroke="#f78166" stroke-width="2" stroke-dasharray="4,3"/>
+      <text x="555" y="95" text-anchor="middle" fill="#f78166" font-size="18" font-weight="700">🚫</text>
+      <text x="555" y="123" text-anchor="middle" fill="#f78166" font-size="9" font-family="Inter,sans-serif">Cannot cross AZ</text>
+
+      <!-- EBS vol in AZ2 grayed -->
+      <rect x="580" y="155" width="120" height="40" rx="8" fill="#0d1117" stroke="#484f58" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="640" y="172" text-anchor="middle" fill="#484f58" font-size="10" font-family="JetBrains Mono,monospace">EBS Vol-E</text>
+      <text x="640" y="186" text-anchor="middle" fill="#484f58" font-size="9" font-family="JetBrains Mono,monospace">Must be same AZ</text>
+
+      <!-- Bottom label -->
+      <text x="430" y="292" text-anchor="middle" fill="#6e7681" font-size="11" font-family="Inter,sans-serif" font-style="italic">EBS volumes are zone-locked — they only attach to instances within the same Availability Zone</text>
+    </svg>
+    <div class="diagram-caption">Figure 1 — EBS AZ binding: one instance can hold multiple volumes; cross-AZ attachment is not permitted</div>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-icon">ℹ️</div>
+    <div class="callout-content">
+      <div class="callout-title">Network Drive — Not a Physical Disk</div>
+      <div class="callout-text">EBS volumes communicate with EC2 instances over AWS's internal network. This introduces a slight latency overhead compared to physically attached disks, but it enables critical features: live detach/reattach, snapshot capabilities, and cross-instance migration without data loss.</div>
+    </div>
+  </div>
+
+  <h3 id="s1-term">Delete-on-Termination Behavior</h3>
+  <p>When an EC2 instance is terminated, what happens to its attached EBS volumes is governed by the <strong style="color:var(--text-primary)">Delete on Termination</strong> attribute, set at instance launch time. Understanding this setting is critical for both data recovery planning and cost management.</p>
+
+  <div class="card">
+    <div class="card-title">⚙️ Default Termination Behavior</div>
+    <table class="spec-table">
+      <thead><tr><th>Volume Type</th><th>Default Behavior</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="badge badge-blue">Root Volume (/dev/xvda)</span></td>
+          <td>✅ Deleted on termination</td>
+          <td>Disable if root data must survive</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-orange">Additional Data Volumes</span></td>
+          <td>🔒 Retained after termination</td>
+          <td>Enable deletion if ephemeral usage</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout warning">
+    <div class="callout-icon">⚠️</div>
+    <div class="callout-content">
+      <div class="callout-title">Exam / Interview Tip — Delete on Termination</div>
+      <div class="callout-text">If asked "how do you preserve the root volume data when an EC2 instance is terminated?" — the answer is to <strong>disable the Delete on Termination attribute on the root volume</strong> before launching the instance, or modify it via the AWS CLI after launch. This is a frequently tested scenario.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 2: EBS VOLUME TYPES ===== -->
+<section class="section" id="s2">
+  <div class="section-header">
+    <div class="section-icon icon-blue">📊</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 02</div>
+      <h2>EBS Volume Types &amp; Selection Guide</h2>
+    </div>
+  </div>
+
+  <p>AWS offers several EBS volume types, each optimized for distinct workload profiles. Selecting the wrong type is a common and expensive mistake — over-provisioning IOPS on a cold storage workload, or under-provisioning throughput on a high-frequency database, both carry a cost penalty.</p>
+
+  <h3 id="s2-gp">General Purpose SSD — GP2 vs GP3</h3>
+  <p>GP3 is the current generation and should be the default choice for most workloads. It decouples IOPS and throughput from capacity, allowing fine-grained cost optimization. GP2 ties performance to volume size, which often forces over-provisioning.</p>
+
+  <!-- Mermaid diagram: Volume type comparison -->
+  <div class="diagram-wrap">
+    <div class="mermaid">
+graph LR
+    A[("🗂️ Your Workload")] --> B{IOPS Requirement?}
+    B -- "< 16,000 IOPS<br/>General Purpose" --> C["GP3\n3,000 IOPS base\nUp to 16,000 IOPS"]
+    B -- "> 16,000 IOPS\nMission Critical" --> D["io2 Block Express\nUp to 256,000 IOPS"]
+    B -- "Throughput-heavy\n(Big Data, ETL)" --> E["st1 HDD\nLow cost, High MB/s"]
+    B -- "Cold / Archival\nInfrequent access" --> F["sc1 HDD\nLowest $/GB"]
+    C --> G[("✅ Boot Volumes\nDev / Test / Prod\nAPIs / Microservices")]
+    D --> H[("✅ Databases\nOracle / SAP HANA\nHigh-frequency OLTP")]
+    E --> I[("✅ Hadoop, Kafka\nLog ingestion\nSequential reads")]
+    F --> J[("✅ Cold archives\nCompliance backups\nInfrequent DR data")]
+
+    style A fill:#1c2333,stroke:#f78166,color:#e6edf3
+    style B fill:#161b22,stroke:#e3b341,color:#e3b341
+    style C fill:#1c2333,stroke:#3fb950,color:#3fb950
+    style D fill:#1c2333,stroke:#58a6ff,color:#58a6ff
+    style E fill:#1c2333,stroke:#bc8cff,color:#bc8cff
+    style F fill:#1c2333,stroke:#6e7681,color:#8b949e
+    style G fill:#0d1117,stroke:#30363d,color:#8b949e
+    style H fill:#0d1117,stroke:#30363d,color:#8b949e
+    style I fill:#0d1117,stroke:#30363d,color:#8b949e
+    style J fill:#0d1117,stroke:#30363d,color:#8b949e
+    </div>
+    <div class="diagram-caption">Figure 2 — EBS volume type selection decision tree based on workload IOPS requirements</div>
+  </div>
+
+  <h3 id="s2-table">Comparison Table — All EBS Types</h3>
+  <div class="card">
+    <table class="spec-table">
+      <thead>
+        <tr>
+          <th>Type</th><th>Category</th><th>Max IOPS</th><th>Max Throughput</th><th>Best For</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="badge badge-green">gp3</span></td>
+          <td>SSD — General</td>
+          <td>16,000</td>
+          <td>1,000 MB/s</td>
+          <td>Boot, Dev/Test, APIs</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-orange">gp2</span></td>
+          <td>SSD — General (Legacy)</td>
+          <td>16,000</td>
+          <td>250 MB/s</td>
+          <td>Legacy workloads (migrate to gp3)</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-blue">io2</span></td>
+          <td>SSD — Provisioned IOPS</td>
+          <td>64,000</td>
+          <td>1,000 MB/s</td>
+          <td>OLTP Databases, SAP</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-blue">io2 Block Express</span></td>
+          <td>SSD — Ultra High Perf</td>
+          <td>256,000</td>
+          <td>4,000 MB/s</td>
+          <td>Oracle, SAP HANA, NoSQL</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-purple">st1</span></td>
+          <td>HDD — Throughput</td>
+          <td>500</td>
+          <td>500 MB/s</td>
+          <td>Big Data, Streaming, ETL</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:rgba(110,118,129,.15);color:#6e7681;border:1px solid #30363d">sc1</span></td>
+          <td>HDD — Cold</td>
+          <td>250</td>
+          <td>250 MB/s</td>
+          <td>Archival, Cold Backups</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout success">
+    <div class="callout-icon">✅</div>
+    <div class="callout-content">
+      <div class="callout-title">Best Practice — Default to GP3</div>
+      <div class="callout-text">GP3 provides the same maximum IOPS as GP2 (16,000) but at a 20% lower cost per GB. It also decouples IOPS provisioning from storage size — you don't need to over-provision capacity just to get the performance you need. AWS recommends migrating all GP2 volumes to GP3 for existing workloads.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 3: EBS SNAPSHOTS ===== -->
+<section class="section" id="s3">
+  <div class="section-header">
+    <div class="section-icon icon-teal">📸</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 03</div>
+      <h2>EBS Snapshots — Backup, Recovery &amp; Migration</h2>
+    </div>
+  </div>
+
+  <p>An EBS Snapshot is a point-in-time backup of an EBS volume stored in Amazon S3. Snapshots are incremental — only the blocks that changed since the last snapshot are written, which keeps backup storage costs low. More importantly, snapshots unlock cross-AZ and cross-region volume migration capabilities.</p>
+
+  <h3 id="s3-arch">Snapshot Architecture &amp; Cross-AZ Migration</h3>
+
+  <!-- SVG: Snapshot cross-AZ migration diagram -->
+  <div class="svg-wrap">
+    <svg viewBox="0 0 860 230" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:860px;display:block;margin:0 auto">
+      <defs>
+        <marker id="snapArrow" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#39d3c3"/></marker>
+        <marker id="snapArrowB" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#58a6ff"/></marker>
+        <marker id="snapArrowP" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#bc8cff"/></marker>
+        <linearGradient id="s3Grad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style="stop-color:#1c2333"/>
+          <stop offset="100%" style="stop-color:#161b22"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Source AZ box -->
+      <rect x="10" y="15" width="200" height="200" rx="12" fill="#161b22" stroke="#f78166" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="110" y="34" text-anchor="middle" fill="#f78166" font-size="10" font-weight="700" font-family="JetBrains Mono,monospace">SOURCE AZ — ap-southeast-1a</text>
+      <rect x="28" y="48" width="160" height="65" rx="8" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="108" y="68" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="700" font-family="Sora,sans-serif">EC2 Instance</text>
+      <text x="108" y="84" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">prod-app-01</text>
+      <text x="108" y="104" text-anchor="middle" fill="#58a6ff" font-size="18">🖥️</text>
+
+      <!-- Source EBS Vol -->
+      <rect x="28" y="128" width="160" height="50" rx="8" fill="#0d1117" stroke="#f78166" stroke-width="1.5"/>
+      <text x="108" y="150" text-anchor="middle" fill="#f78166" font-size="11" font-weight="600" font-family="Sora,sans-serif">EBS Volume</text>
+      <text x="108" y="167" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">150 GB · gp3</text>
+
+      <!-- Arrow Source Vol → Snapshot -->
+      <line x1="210" y1="153" x2="300" y2="115" stroke="#39d3c3" stroke-width="2" marker-end="url(#snapArrow)"/>
+      <text x="256" y="126" text-anchor="middle" fill="#39d3c3" font-size="10" font-family="Inter,sans-serif" transform="rotate(-22,256,126)">Create Snapshot</text>
+
+      <!-- Snapshot S3 box (center) -->
+      <rect x="300" y="68" width="260" height="100" rx="12" fill="#1c2333" stroke="#39d3c3" stroke-width="2"/>
+      <text x="430" y="92" text-anchor="middle" fill="#39d3c3" font-size="13" font-weight="700" font-family="Sora,sans-serif">EBS Snapshot</text>
+      <text x="430" y="110" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">Stored in Amazon S3</text>
+      <text x="430" y="127" text-anchor="middle" fill="#e3b341" font-size="10" font-family="JetBrains Mono,monospace">📸 snap-0a1b2c3d4e5f</text>
+      <text x="430" y="144" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">Incremental · Encrypted</text>
+      <text x="430" y="160" text-anchor="middle" fill="#3fb950" font-size="10" font-family="JetBrains Mono,monospace">✓ Cross-AZ &amp; Cross-Region capable</text>
+
+      <!-- Arrow Snapshot → Target AZ Vol -->
+      <line x1="560" y1="118" x2="650" y2="153" stroke="#58a6ff" stroke-width="2" marker-end="url(#snapArrowB)"/>
+      <text x="616" y="127" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="Inter,sans-serif" transform="rotate(22,616,127)">Restore Volume</text>
+
+      <!-- Target AZ box -->
+      <rect x="650" y="15" width="200" height="200" rx="12" fill="#161b22" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="750" y="34" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="700" font-family="JetBrains Mono,monospace">TARGET AZ — ap-southeast-1b</text>
+      <rect x="668" y="48" width="164" height="65" rx="8" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="750" y="68" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="700" font-family="Sora,sans-serif">EC2 Instance</text>
+      <text x="750" y="84" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">prod-app-02</text>
+      <text x="750" y="104" text-anchor="middle" fill="#58a6ff" font-size="18">🖥️</text>
+
+      <!-- Target EBS Vol (restored) -->
+      <rect x="668" y="128" width="164" height="50" rx="8" fill="#0d1117" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="750" y="150" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600" font-family="Sora,sans-serif">Restored Volume</text>
+      <text x="750" y="167" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">150 GB · gp3 · New AZ</text>
+
+      <!-- Cross-region arrow (dotted) -->
+      <path d="M 560 118 Q 650 40 750 68" stroke="#bc8cff" stroke-width="1.5" fill="none" stroke-dasharray="6,3" marker-end="url(#snapArrowP)"/>
+      <text x="660" y="38" text-anchor="middle" fill="#bc8cff" font-size="9" font-family="Inter,sans-serif">Copy to another Region (DR)</text>
+    </svg>
+    <div class="diagram-caption">Figure 3 — EBS Snapshot enables cross-AZ and cross-region volume migration via S3-backed incremental backups</div>
+  </div>
+
+  <h3 id="s3-feat">Snapshot Features — Archive, Recycle Bin &amp; Fast Restore</h3>
+
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title">🗄️ Snapshot Archive</div>
+      <p style="font-size:13px">Move snapshots to a cold "archive tier" for up to <strong style="color:var(--accent-green)">75% cost reduction</strong>. Restoration from archive takes 24–72 hours — plan ahead for DR scenarios that use archived snapshots.</p>
+      <div style="text-align:center;margin-top:8px"><span class="badge badge-green">75% cheaper</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title">♻️ Recycle Bin</div>
+      <p style="font-size:13px">Protects against accidental deletion. Deleted snapshots land in a Recycle Bin and can be recovered within the configured retention window (1 day to 1 year). Create a retention rule to activate this safety net.</p>
+      <div style="text-align:center;margin-top:8px"><span class="badge badge-blue">1 day – 1 year</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title">⚡ Fast Snapshot Restore</div>
+      <p style="font-size:13px">Forces full initialization at snapshot creation, eliminating first-use latency when launching volumes from large snapshots. Comes at <strong style="color:var(--accent-orange)">significant cost premium</strong> — use only when zero-latency cold boot is required.</p>
+      <div style="text-align:center;margin-top:8px"><span class="badge badge-orange">High Cost</span></div>
+    </div>
+  </div>
+
+  <div class="callout tip">
+    <div class="callout-icon">💡</div>
+    <div class="callout-content">
+      <div class="callout-title">Architect's Tip — Snapshot Lifecycle Policy</div>
+      <div class="callout-text">For production workloads, always pair EBS Snapshots with an <strong>Amazon Data Lifecycle Manager (DLM)</strong> policy. This automates snapshot creation schedules, cross-region copy for DR, and archival transitions — removing the operational burden of manual snapshot management entirely.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 4: CROSS-REGION DR ===== -->
+<section class="section" id="s4">
+  <div class="section-header">
+    <div class="section-icon icon-purple">🌐</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 04</div>
+      <h2>Cross-Region Disaster Recovery Strategy</h2>
+    </div>
+  </div>
+
+  <p>EBS Snapshots stored in S3 can be copied to any AWS region. This is the foundation of a cost-effective cloud DR strategy — rather than running duplicate infrastructure 24/7, you maintain snapshots in a secondary region and provision recovery instances only during an actual failure event.</p>
+
+  <!-- Mermaid flowchart: DR workflow -->
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+    A["🖥️ Primary EC2 Instance\nRegion: ap-southeast-1\nProduction Workload"] --> B["📸 Automated Snapshot\nvia DLM Policy\nDaily at 02:00 UTC"]
+    B --> C["🗂️ Snapshot in S3\nap-southeast-1\nRetention: 7 days"]
+    C --> D{"DR Tier?"}
+    D -- "Standard DR\n(RTO 1-4 hrs)" --> E["📤 Copy Snapshot\nto eu-west-2\nCross-Region Replication"]
+    D -- "Archive DR\n(RTO 24-72 hrs\nCost Optimized)" --> F["🗄️ Archive Tier\nap-southeast-1\n75% Cost Saving"]
+    E --> G["🔄 On Failover Event:\nRestore EBS Volume\nLaunch New EC2 Instance"]
+    F --> H["⏳ On Failover Event:\nInitiate Archive Restore\nWait 24-72 hrs then Launch"]
+    G --> I["✅ DR Instance Online\neu-west-2\nMinimal RTO"]
+    H --> I
+
+    style A fill:#1c2333,stroke:#58a6ff,color:#e6edf3
+    style B fill:#1c2333,stroke:#39d3c3,color:#39d3c3
+    style C fill:#1c2333,stroke:#3fb950,color:#3fb950
+    style D fill:#161b22,stroke:#e3b341,color:#e3b341
+    style E fill:#1c2333,stroke:#bc8cff,color:#bc8cff
+    style F fill:#1c2333,stroke:#6e7681,color:#8b949e
+    style G fill:#1c2333,stroke:#f78166,color:#f78166
+    style H fill:#1c2333,stroke:#f78166,color:#f78166
+    style I fill:#1c2333,stroke:#3fb950,color:#3fb950
+    </div>
+    <div class="diagram-caption">Figure 4 — EBS-based cross-region DR workflow with automated snapshot lifecycle management</div>
+  </div>
+
+  <div class="callout danger">
+    <div class="callout-icon">🚨</div>
+    <div class="callout-content">
+      <div class="callout-title">Warning — Archive Tier RTO Impact</div>
+      <div class="callout-text">If your DR plan uses the Snapshot Archive tier, ensure your RTO (Recovery Time Objective) allows for the 24–72 hour restore window. Archived snapshots cannot be used directly — they must be fully restored to standard tier first. For sub-4-hour RTO requirements, keep snapshots in standard tier even in the DR region.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 5: AMI OVERVIEW ===== -->
+<section class="section" id="s5">
+  <div class="section-header">
+    <div class="section-icon icon-yellow">🖼️</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 05</div>
+      <h2>Amazon Machine Images (AMI) — Concepts &amp; Architecture</h2>
+    </div>
+  </div>
+
+  <p>An Amazon Machine Image (AMI) is a preconfigured template that defines everything needed to launch an EC2 instance: the operating system, software packages, security configurations, and initial storage layout. AMIs are the fundamental unit of EC2 instance standardization — rather than configuring each new instance from scratch, you encode your gold standard configuration once and stamp out identical instances on demand.</p>
+
+  <h3 id="s5-types">AMI Sources — Three Flavors</h3>
+
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title">🟠 AWS-Managed AMIs</div>
+      <p style="font-size:13px">Maintained and patched by AWS. Amazon Linux 2023 and Amazon Linux 2 are the most widely used. Optimized for EC2 with built-in SSM agent and CloudWatch hooks. Best starting point for most workloads.</p>
+      <span class="badge badge-orange">Provided by AWS</span>
+    </div>
+    <div class="card">
+      <div class="card-title">🔵 Custom AMIs</div>
+      <p style="font-size:13px">Built from your own EC2 instances after configuration. You own maintenance and patching. The primary tool for reducing boot time by baking software dependencies directly into the image layer.</p>
+      <span class="badge badge-blue">Self-Managed</span>
+    </div>
+    <div class="card">
+      <div class="card-title">🟢 Marketplace AMIs</div>
+      <p style="font-size:13px">Vendor-created and optionally sold through AWS Marketplace. Common for appliances (firewalls, WAFs, database engines). May carry per-instance licensing fees on top of EC2 costs.</p>
+      <span class="badge badge-green">Third-Party</span>
+    </div>
+  </div>
+
+  <h3 id="s5-flow">AMI Build &amp; Deploy Workflow</h3>
+
+  <!-- SVG: AMI lifecycle pipeline -->
+  <div class="svg-wrap">
+    <svg viewBox="0 0 860 180" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:860px;display:block;margin:0 auto">
+      <defs>
+        <marker id="amiArrow" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#e3b341"/></marker>
+        <linearGradient id="amiPipeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style="stop-color:#1c2333;stop-opacity:0"/>
+          <stop offset="50%" style="stop-color:#e3b341;stop-opacity:0.06"/>
+          <stop offset="100%" style="stop-color:#1c2333;stop-opacity:0"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Pipeline background bar -->
+      <rect x="10" y="60" width="840" height="60" rx="8" fill="url(#amiPipeGrad)"/>
+
+      <!-- Step 1 -->
+      <rect x="14" y="50" width="130" height="80" rx="8" fill="#1c2333" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="79" y="74" text-anchor="middle" fill="#58a6ff" font-size="18">🖥️</text>
+      <text x="79" y="92" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="700" font-family="Sora,sans-serif">1. Launch Base</text>
+      <text x="79" y="108" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">Standard AMI</text>
+      <text x="79" y="122" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter,sans-serif">Amazon Linux 2023</text>
+
+      <!-- Arrow 1-2 -->
+      <line x1="144" y1="90" x2="178" y2="90" stroke="#e3b341" stroke-width="2" marker-end="url(#amiArrow)"/>
+
+      <!-- Step 2 -->
+      <rect x="178" y="50" width="130" height="80" rx="8" fill="#1c2333" stroke="#39d3c3" stroke-width="1.5"/>
+      <text x="243" y="74" text-anchor="middle" fill="#39d3c3" font-size="18">⚙️</text>
+      <text x="243" y="92" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="700" font-family="Sora,sans-serif">2. Customize</text>
+      <text x="243" y="108" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">Install packages</text>
+      <text x="243" y="122" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter,sans-serif">Configure, harden</text>
+
+      <!-- Arrow 2-3 -->
+      <line x1="308" y1="90" x2="342" y2="90" stroke="#e3b341" stroke-width="2" marker-end="url(#amiArrow)"/>
+
+      <!-- Step 3 -->
+      <rect x="342" y="50" width="130" height="80" rx="8" fill="#1c2333" stroke="#f78166" stroke-width="1.5"/>
+      <text x="407" y="74" text-anchor="middle" fill="#f78166" font-size="18">⏸️</text>
+      <text x="407" y="92" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="700" font-family="Sora,sans-serif">3. Stop Instance</text>
+      <text x="407" y="108" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">Data integrity</text>
+      <text x="407" y="122" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter,sans-serif">Consistent state</text>
+
+      <!-- Arrow 3-4 -->
+      <line x1="472" y1="90" x2="506" y2="90" stroke="#e3b341" stroke-width="2" marker-end="url(#amiArrow)"/>
+
+      <!-- Step 4 -->
+      <rect x="506" y="50" width="130" height="80" rx="8" fill="#1c2333" stroke="#bc8cff" stroke-width="1.5"/>
+      <text x="571" y="74" text-anchor="middle" fill="#bc8cff" font-size="18">📸</text>
+      <text x="571" y="92" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="700" font-family="Sora,sans-serif">4. Build AMI</text>
+      <text x="571" y="108" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">EBS snapshot</text>
+      <text x="571" y="122" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter,sans-serif">Auto-created behind scenes</text>
+
+      <!-- Arrow 4-5 -->
+      <line x1="636" y1="90" x2="670" y2="90" stroke="#e3b341" stroke-width="2" marker-end="url(#amiArrow)"/>
+
+      <!-- Step 5 -->
+      <rect x="670" y="50" width="180" height="80" rx="8" fill="#1c2333" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="760" y="74" text-anchor="middle" fill="#3fb950" font-size="18">🚀</text>
+      <text x="760" y="92" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="700" font-family="Sora,sans-serif">5. Launch from AMI</text>
+      <text x="760" y="108" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono,monospace">Any AZ / Region</text>
+      <text x="760" y="122" text-anchor="middle" fill="#3fb950" font-size="9" font-family="Inter,sans-serif">Faster boot · Pre-configured</text>
+
+      <!-- Step labels below -->
+      <text x="79" y="150" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono,monospace">STEP 1</text>
+      <text x="243" y="150" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono,monospace">STEP 2</text>
+      <text x="407" y="150" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono,monospace">STEP 3</text>
+      <text x="571" y="150" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono,monospace">STEP 4</text>
+      <text x="760" y="150" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono,monospace">STEP 5</text>
+    </svg>
+    <div class="diagram-caption">Figure 5 — AMI build pipeline: launch → customize → stop → capture → stamp out instances</div>
+  </div>
+
+  <div class="callout teal">
+    <div class="callout-icon">🚀</div>
+    <div class="callout-content">
+      <div class="callout-title">Why Custom AMIs Accelerate Deployments</div>
+      <div class="callout-text">A typical EC2 user-data bootstrap script might take 3–5 minutes to install a web server, monitoring agent, and custom application dependencies. If you bake all of that into a custom AMI, that installation time drops to near zero — the new instance boots with everything pre-installed. For auto-scaling groups that launch hundreds of instances under load, this difference compounds dramatically.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 6: AMI BEST PRACTICES ===== -->
+<section class="section" id="s6">
+  <div class="section-header">
+    <div class="section-icon icon-green">✅</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 06</div>
+      <h2>AMI Best Practices &amp; Governance</h2>
+    </div>
+  </div>
+
+  <p>Custom AMIs are powerful, but without governance they become a maintenance liability. Stale AMIs carry unpatched operating systems and outdated dependencies — the opposite of what they were designed to prevent.</p>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">🏗️ AMI Build Pipeline</div>
+      <ul class="bullet-list">
+        <li>Use <strong style="color:var(--text-primary)">EC2 Image Builder</strong> to automate AMI creation on a schedule</li>
+        <li>Apply OS patches during each build cycle — never ship a stale AMI</li>
+        <li>Run CIS or STIG hardening scripts as a build pipeline stage</li>
+        <li>Version AMIs with semantic tags: <code style="color:var(--accent-teal);background:rgba(57,211,195,.08);padding:2px 6px;border-radius:4px">v2.4.1-2025-06</code></li>
+        <li>Test AMI in staging before promoting to production</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">♻️ AMI Lifecycle Management</div>
+      <ul class="bullet-list">
+        <li>Deregister AMIs older than your retention policy (e.g., 90 days)</li>
+        <li>Delete associated EBS snapshots when deregistering to avoid orphaned cost</li>
+        <li>Copy golden AMIs to DR regions as part of your BCP</li>
+        <li>Share AMIs across accounts via Resource Access Manager (RAM) for org-wide standards</li>
+        <li>Tag AMIs with owning team, purpose, and base OS version</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Mermaid: AMI governance lifecycle -->
+  <div class="diagram-wrap">
+    <div class="mermaid">
+stateDiagram-v2
+    [*] --> Pending : EC2 Image Builder triggered
+    Pending --> Available : Build + validation passed
+    Available --> Deprecated : New version released
+    Available --> Shared : Cross-account share via RAM
+    Deprecated --> Deregistered : Retention policy expired
+    Deregistered --> [*] : Snapshots deleted, cost cleared
+    Shared --> Available : Used by consumer accounts
+
+    note right of Available
+        Tag: env=production
+        Tag: version=v3.1.0
+        Tag: patched=2025-06
+    end note
+    </div>
+    <div class="diagram-caption">Figure 6 — AMI governance state machine: build, version, deprecate, and clean up</div>
+  </div>
+</section>
+
+<!-- ===== SECTION 7: EC2 INSTANCE STORE ===== -->
+<section class="section" id="s7">
+  <div class="section-header">
+    <div class="section-icon icon-orange">⚡</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 07</div>
+      <h2>EC2 Instance Store — High-Performance Local Disk</h2>
+    </div>
+  </div>
+
+  <p>For workloads where EBS network latency is unacceptable, AWS offers a fundamentally different storage model: the <strong style="color:var(--text-primary)">EC2 Instance Store</strong>. This is physical NVMe storage directly attached to the host server — not a network drive, but actual hardware. The tradeoff is complete: maximum performance, zero durability.</p>
+
+  <h3 id="s7-perf">Performance Comparison — Instance Store vs EBS</h3>
+
+  <!-- SVG: Performance comparison bar chart style diagram -->
+  <div class="svg-wrap">
+    <svg viewBox="0 0 860 220" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:860px;display:block;margin:0 auto">
+      <defs>
+        <linearGradient id="barGrad1" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style="stop-color:#f78166"/>
+          <stop offset="100%" style="stop-color:#e3b341"/>
+        </linearGradient>
+        <linearGradient id="barGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style="stop-color:#58a6ff"/>
+          <stop offset="100%" style="stop-color:#39d3c3"/>
+        </linearGradient>
+        <linearGradient id="barGrad3" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style="stop-color:#3fb950"/>
+          <stop offset="100%" style="stop-color:#39d3c3"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Axis Labels -->
+      <text x="20" y="18" fill="#8b949e" font-size="12" font-weight="700" font-family="Sora,sans-serif">Random Read IOPS Comparison</text>
+
+      <!-- Axis -->
+      <line x1="200" y1="30" x2="200" y2="190" stroke="#30363d" stroke-width="1"/>
+      <line x1="200" y1="190" x2="850" y2="190" stroke="#30363d" stroke-width="1"/>
+
+      <!-- Gridlines -->
+      <line x1="200" y1="60" x2="850" y2="60" stroke="#30363d" stroke-width="0.5" stroke-dasharray="3,3"/>
+      <line x1="200" y1="100" x2="850" y2="100" stroke="#30363d" stroke-width="0.5" stroke-dasharray="3,3"/>
+      <line x1="200" y1="140" x2="850" y2="140" stroke="#30363d" stroke-width="0.5" stroke-dasharray="3,3"/>
+      <line x1="200" y1="170" x2="850" y2="170" stroke="#30363d" stroke-width="0.5" stroke-dasharray="3,3"/>
+
+      <!-- Y-axis labels -->
+      <text x="188" y="64" text-anchor="end" fill="#6e7681" font-size="10" font-family="JetBrains Mono,monospace">3.3M</text>
+      <text x="188" y="104" text-anchor="end" fill="#6e7681" font-size="10" font-family="JetBrains Mono,monospace">1.4M</text>
+      <text x="188" y="144" text-anchor="end" fill="#6e7681" font-size="10" font-family="JetBrains Mono,monospace">256K</text>
+      <text x="188" y="174" text-anchor="end" fill="#6e7681" font-size="10" font-family="JetBrains Mono,monospace">64K</text>
+      <text x="160" y="194" text-anchor="end" fill="#6e7681" font-size="10" font-family="JetBrains Mono,monospace">IOPS ↑</text>
+
+      <!-- Bar 1: NVMe Instance Store (large) -->
+      <rect x="220" y="60" width="130" height="130" rx="4" fill="url(#barGrad1)"/>
+      <text x="285" y="50" text-anchor="middle" fill="#f78166" font-size="11" font-weight="700" font-family="Sora,sans-serif">3.3M IOPS</text>
+      <text x="285" y="205" text-anchor="middle" fill="#e6edf3" font-size="11" font-family="Sora,sans-serif">i4i.32xlarge</text>
+      <text x="285" y="217" text-anchor="middle" fill="#f78166" font-size="9" font-family="JetBrains Mono,monospace">Instance Store</text>
+
+      <!-- Bar 2: Instance Store medium -->
+      <rect x="380" y="100" width="130" height="90" rx="4" fill="url(#barGrad1)" opacity="0.7"/>
+      <text x="445" y="90" text-anchor="middle" fill="#e3b341" font-size="11" font-weight="700" font-family="Sora,sans-serif">1.4M IOPS</text>
+      <text x="445" y="205" text-anchor="middle" fill="#e6edf3" font-size="11" font-family="Sora,sans-serif">i3.8xlarge</text>
+      <text x="445" y="217" text-anchor="middle" fill="#e3b341" font-size="9" font-family="JetBrains Mono,monospace">Instance Store</text>
+
+      <!-- Bar 3: io2 Block Express -->
+      <rect x="540" y="140" width="130" height="50" rx="4" fill="url(#barGrad2)"/>
+      <text x="605" y="130" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700" font-family="Sora,sans-serif">256K IOPS</text>
+      <text x="605" y="205" text-anchor="middle" fill="#e6edf3" font-size="11" font-family="Sora,sans-serif">io2 Block Express</text>
+      <text x="605" y="217" text-anchor="middle" fill="#58a6ff" font-size="9" font-family="JetBrains Mono,monospace">EBS Provisioned</text>
+
+      <!-- Bar 4: gp3 -->
+      <rect x="700" y="174" width="130" height="16" rx="4" fill="url(#barGrad3)"/>
+      <text x="765" y="168" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700" font-family="Sora,sans-serif">16K IOPS</text>
+      <text x="765" y="205" text-anchor="middle" fill="#e6edf3" font-size="11" font-family="Sora,sans-serif">gp3 Volume</text>
+      <text x="765" y="217" text-anchor="middle" fill="#3fb950" font-size="9" font-family="JetBrains Mono,monospace">EBS General Purpose</text>
+    </svg>
+    <div class="diagram-caption">Figure 7 — IOPS comparison: NVMe Instance Store delivers orders-of-magnitude higher throughput than EBS; durability is the tradeoff</div>
+  </div>
+
+  <h3 id="s7-use">Use Cases, Tradeoffs &amp; Architecture Decision</h3>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title" style="color:var(--accent-green)">✅ Ideal Use Cases</div>
+      <ul class="bullet-list">
+        <li>In-memory database cache layer (Redis, Memcached overflow)</li>
+        <li>Temporary buffer storage for stream processing pipelines</li>
+        <li>Scratch space for ML model inference or batch data transformation</li>
+        <li>Intermediate results storage in multi-stage ETL workflows</li>
+        <li>Elasticsearch / OpenSearch hot node local shard storage</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color:var(--accent-orange)">❌ What Instance Store Cannot Do</div>
+      <ul class="bullet-list">
+        <li>Store data that must survive instance termination or stop</li>
+        <li>Serve as a primary database data volume</li>
+        <li>Replace EBS for OS root volumes (no snapshot capability)</li>
+        <li>Provide data redundancy — hardware failure means data loss</li>
+        <li>Participate in EBS multi-attach or cross-AZ sharing</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout danger">
+    <div class="callout-icon">🚨</div>
+    <div class="callout-content">
+      <div class="callout-title">Warning — Ephemeral Storage</div>
+      <div class="callout-text">Instance Store is <strong>ephemeral</strong>. Data is permanently lost on instance stop, termination, or underlying hardware failure. If your application writes critical data to instance store paths (commonly <code>/mnt/instance-store</code>), you must implement your own replication or flushing mechanism to durable storage (EBS or S3) before any shutdown event.</div>
+    </div>
+  </div>
+
+  <div class="callout tip">
+    <div class="callout-icon">💡</div>
+    <div class="callout-content">
+      <div class="callout-title">Exam / Interview Tip — Instance Store Recognition</div>
+      <div class="callout-text">Any exam question describing a need for <em>"extremely high IOPS"</em>, <em>"hardware-attached local disk"</em>, or <em>"sub-millisecond storage latency"</em> on EC2 is pointing toward EC2 Instance Store. Conversely, any requirement for <em>"durable"</em>, <em>"persistent"</em>, or <em>"survives restart"</em> means EBS.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 8: HOT/COOL/COLD STORAGE TIERS ===== -->
+<section class="section" id="s8">
+  <div class="section-header">
+    <div class="section-icon icon-teal">🌡️</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 08</div>
+      <h2>Cloud Storage Retention Tiers — Hot, Cool &amp; Cold</h2>
+    </div>
+  </div>
+
+  <p>Modern cloud storage architecture separates data by access frequency and cost sensitivity into three thermal tiers. EBS, S3 Standard, S3-IA, and S3 Glacier each occupy a specific tier. Designing a correct tiering strategy can reduce storage costs by 60–80% without compromising data availability for production workloads.</p>
+
+  <h3 id="s8-diag">Block Diagram — Cloud Storage Architecture with Retention Tiers</h3>
+
+  <!-- SVG: Hot/Cool/Cold Block Diagram with animated data flows -->
+  <div class="svg-wrap" style="overflow-x:auto">
+    <svg viewBox="0 0 920 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;min-width:600px;display:block;margin:0 auto">
+      <defs>
+        <!-- Gradients for tier backgrounds -->
+        <linearGradient id="hotGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#f78166;stop-opacity:0.15"/>
+          <stop offset="100%" style="stop-color:#e3b341;stop-opacity:0.08"/>
+        </linearGradient>
+        <linearGradient id="coolGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#58a6ff;stop-opacity:0.12"/>
+          <stop offset="100%" style="stop-color:#bc8cff;stop-opacity:0.06"/>
+        </linearGradient>
+        <linearGradient id="coldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#39d3c3;stop-opacity:0.10"/>
+          <stop offset="100%" style="stop-color:#3fb950;stop-opacity:0.05"/>
+        </linearGradient>
+        <linearGradient id="clientGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#bc8cff;stop-opacity:0.15"/>
+          <stop offset="100%" style="stop-color:#58a6ff;stop-opacity:0.08"/>
+        </linearGradient>
+        <!-- Arrow markers -->
+        <marker id="flowArrowR" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f78166"/></marker>
+        <marker id="flowArrowB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#58a6ff"/></marker>
+        <marker id="flowArrowT" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#39d3c3"/></marker>
+        <marker id="flowArrowP" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#bc8cff"/></marker>
+        <marker id="flowArrowG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#3fb950"/></marker>
+      </defs>
+
+      <!-- ===== CLIENT / ON-PREM SIDE ===== -->
+      <rect x="10" y="20" width="185" height="440" rx="12" fill="url(#clientGrad)" stroke="#bc8cff" stroke-width="1.5"/>
+      <text x="102" y="42" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="700" font-family="JetBrains Mono,monospace">WORKLOADS</text>
+
+      <!-- EC2 Application -->
+      <rect x="24" y="54" width="157" height="60" rx="8" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="102" y="76" text-anchor="middle" fill="#58a6ff" font-size="18">🖥️</text>
+      <text x="102" y="94" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600" font-family="Sora,sans-serif">EC2 Application</text>
+      <text x="102" y="107" text-anchor="middle" fill="#8b949e" font-size="9" font-family="JetBrains Mono,monospace">prod-web-cluster</text>
+
+      <!-- Database -->
+      <rect x="24" y="128" width="157" height="60" rx="8" fill="#0d1117" stroke="#f78166" stroke-width="1.5"/>
+      <text x="102" y="150" text-anchor="middle" fill="#f78166" font-size="18">🗄️</text>
+      <text x="102" y="168" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600" font-family="Sora,sans-serif">RDS / Database</text>
+      <text x="102" y="181" text-anchor="middle" fill="#8b949e" font-size="9" font-family="JetBrains Mono,monospace">mysql-prod-01</text>
+
+      <!-- Backup Agent -->
+      <rect x="24" y="202" width="157" height="60" rx="8" fill="#0d1117" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="102" y="224" text-anchor="middle" fill="#3fb950" font-size="18">📦</text>
+      <text x="102" y="242" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600" font-family="Sora,sans-serif">Backup Agent</text>
+      <text x="102" y="255" text-anchor="middle" fill="#8b949e" font-size="9" font-family="JetBrains Mono,monospace">AWS Backup / DLM</text>
+
+      <!-- On-prem server -->
+      <rect x="24" y="276" width="157" height="60" rx="8" fill="#0d1117" stroke="#e3b341" stroke-width="1.5"/>
+      <text x="102" y="298" text-anchor="middle" fill="#e3b341" font-size="18">🏢</text>
+      <text x="102" y="316" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600" font-family="Sora,sans-serif">On-Premises Server</text>
+      <text x="102" y="329" text-anchor="middle" fill="#8b949e" font-size="9" font-family="JetBrains Mono,monospace">via Storage Gateway</text>
+
+      <!-- DR Recovery Target -->
+      <rect x="24" y="350" width="157" height="60" rx="8" fill="#0d1117" stroke="#39d3c3" stroke-width="1.5"/>
+      <text x="102" y="372" text-anchor="middle" fill="#39d3c3" font-size="18">🔄</text>
+      <text x="102" y="390" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600" font-family="Sora,sans-serif">DR Recovery</text>
+      <text x="102" y="403" text-anchor="middle" fill="#8b949e" font-size="9" font-family="JetBrains Mono,monospace">Restore on demand</text>
+
+      <!-- ===== HOT TIER ===== -->
+      <rect x="215" y="20" width="210" height="440" rx="12" fill="url(#hotGrad)" stroke="#f78166" stroke-width="2"/>
+      <text x="320" y="42" text-anchor="middle" fill="#f78166" font-size="12" font-weight="700" font-family="JetBrains Mono,monospace">🔥 HOT TIER</text>
+      <text x="320" y="57" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Instant access · High cost</text>
+
+      <!-- EBS gp3 -->
+      <rect x="230" y="68" width="180" height="65" rx="8" fill="#1c2333" stroke="#f78166" stroke-width="1.5"/>
+      <text x="320" y="86" text-anchor="middle" fill="#f78166" font-size="11" font-weight="700" font-family="Sora,sans-serif">EBS gp3 / io2</text>
+      <text x="320" y="102" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Block storage for EC2</text>
+      <text x="320" y="118" text-anchor="middle" fill="#e3b341" font-size="9" font-family="JetBrains Mono,monospace">~$0.08–0.125/GB/mo</text>
+      <text x="320" y="128" text-anchor="middle" fill="#3fb950" font-size="9" font-family="JetBrains Mono,monospace">Sub-ms latency</text>
+
+      <!-- S3 Standard -->
+      <rect x="230" y="148" width="180" height="65" rx="8" fill="#1c2333" stroke="#f78166" stroke-width="1.5"/>
+      <text x="320" y="166" text-anchor="middle" fill="#f78166" font-size="11" font-weight="700" font-family="Sora,sans-serif">S3 Standard</text>
+      <text x="320" y="182" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Object store · 11 nines</text>
+      <text x="320" y="198" text-anchor="middle" fill="#e3b341" font-size="9" font-family="JetBrains Mono,monospace">~$0.023/GB/mo</text>
+      <text x="320" y="208" text-anchor="middle" fill="#3fb950" font-size="9" font-family="JetBrains Mono,monospace">ms retrieval</text>
+
+      <!-- Instance Store indicator -->
+      <rect x="230" y="228" width="180" height="50" rx="8" fill="#1c2333" stroke="#e3b341" stroke-width="1.5"/>
+      <text x="320" y="246" text-anchor="middle" fill="#e3b341" font-size="11" font-weight="700" font-family="Sora,sans-serif">Instance Store</text>
+      <text x="320" y="262" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">NVMe local · 3.3M IOPS</text>
+      <text x="320" y="272" text-anchor="middle" fill="#f78166" font-size="9" font-family="JetBrains Mono,monospace">Ephemeral only</text>
+
+      <!-- Hot SLA label -->
+      <rect x="230" y="292" width="180" height="40" rx="8" fill="rgba(247,129,102,.06)" stroke="rgba(247,129,102,.2)" stroke-width="1"/>
+      <text x="320" y="309" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Retention: 0–30 days</text>
+      <text x="320" y="325" text-anchor="middle" fill="#f78166" font-size="10" font-family="JetBrains Mono,monospace">RTO: Seconds</text>
+
+      <!-- ===== COOL TIER ===== -->
+      <rect x="445" y="20" width="210" height="440" rx="12" fill="url(#coolGrad)" stroke="#58a6ff" stroke-width="2"/>
+      <text x="550" y="42" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700" font-family="JetBrains Mono,monospace">❄️ COOL TIER</text>
+      <text x="550" y="57" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Near-line · Moderate cost</text>
+
+      <!-- S3 Standard-IA -->
+      <rect x="460" y="68" width="180" height="65" rx="8" fill="#1c2333" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="550" y="86" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700" font-family="Sora,sans-serif">S3 Standard-IA</text>
+      <text x="550" y="102" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Infrequent Access</text>
+      <text x="550" y="118" text-anchor="middle" fill="#e3b341" font-size="9" font-family="JetBrains Mono,monospace">~$0.0125/GB/mo</text>
+      <text x="550" y="128" text-anchor="middle" fill="#3fb950" font-size="9" font-family="JetBrains Mono,monospace">ms retrieval · retrieval fee</text>
+
+      <!-- S3 One Zone-IA -->
+      <rect x="460" y="148" width="180" height="65" rx="8" fill="#1c2333" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="550" y="166" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700" font-family="Sora,sans-serif">S3 One Zone-IA</text>
+      <text x="550" y="182" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Single AZ · lower cost</text>
+      <text x="550" y="198" text-anchor="middle" fill="#e3b341" font-size="9" font-family="JetBrains Mono,monospace">~$0.01/GB/mo</text>
+      <text x="550" y="208" text-anchor="middle" fill="#f78166" font-size="9" font-family="JetBrains Mono,monospace">No AZ redundancy</text>
+
+      <!-- EBS Snapshot archive precursor -->
+      <rect x="460" y="228" width="180" height="50" rx="8" fill="#1c2333" stroke="#bc8cff" stroke-width="1.5"/>
+      <text x="550" y="246" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="700" font-family="Sora,sans-serif">EBS Snapshots</text>
+      <text x="550" y="262" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Standard tier · S3-backed</text>
+      <text x="550" y="272" text-anchor="middle" fill="#3fb950" font-size="9" font-family="JetBrains Mono,monospace">Instant restore</text>
+
+      <!-- Cool SLA label -->
+      <rect x="460" y="292" width="180" height="40" rx="8" fill="rgba(88,166,255,.06)" stroke="rgba(88,166,255,.2)" stroke-width="1"/>
+      <text x="550" y="309" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Retention: 30–90 days</text>
+      <text x="550" y="325" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="JetBrains Mono,monospace">RTO: Minutes</text>
+
+      <!-- ===== COLD TIER ===== -->
+      <rect x="675" y="20" width="230" height="440" rx="12" fill="url(#coldGrad)" stroke="#39d3c3" stroke-width="2"/>
+      <text x="790" y="42" text-anchor="middle" fill="#39d3c3" font-size="12" font-weight="700" font-family="JetBrains Mono,monospace">🧊 COLD TIER</text>
+      <text x="790" y="57" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Archival · Lowest cost</text>
+
+      <!-- S3 Glacier Instant -->
+      <rect x="690" y="68" width="200" height="65" rx="8" fill="#1c2333" stroke="#39d3c3" stroke-width="1.5"/>
+      <text x="790" y="86" text-anchor="middle" fill="#39d3c3" font-size="11" font-weight="700" font-family="Sora,sans-serif">S3 Glacier Instant</text>
+      <text x="790" y="102" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Quarterly access</text>
+      <text x="790" y="118" text-anchor="middle" fill="#e3b341" font-size="9" font-family="JetBrains Mono,monospace">~$0.004/GB/mo</text>
+      <text x="790" y="128" text-anchor="middle" fill="#3fb950" font-size="9" font-family="JetBrains Mono,monospace">ms retrieval</text>
+
+      <!-- S3 Glacier Flexible -->
+      <rect x="690" y="148" width="200" height="65" rx="8" fill="#1c2333" stroke="#39d3c3" stroke-width="1.5"/>
+      <text x="790" y="166" text-anchor="middle" fill="#39d3c3" font-size="11" font-weight="700" font-family="Sora,sans-serif">S3 Glacier Flexible</text>
+      <text x="790" y="182" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Annual access pattern</text>
+      <text x="790" y="198" text-anchor="middle" fill="#e3b341" font-size="9" font-family="JetBrains Mono,monospace">~$0.0036/GB/mo</text>
+      <text x="790" y="208" text-anchor="middle" fill="#8b949e" font-size="9" font-family="JetBrains Mono,monospace">1min–12hr retrieval</text>
+
+      <!-- EBS Snapshot Archive -->
+      <rect x="690" y="228" width="200" height="50" rx="8" fill="#1c2333" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="790" y="246" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700" font-family="Sora,sans-serif">EBS Snapshot Archive</text>
+      <text x="790" y="262" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">75% cheaper than standard</text>
+      <text x="790" y="272" text-anchor="middle" fill="#f78166" font-size="9" font-family="JetBrains Mono,monospace">24–72 hr restore window</text>
+
+      <!-- Glacier Deep Archive -->
+      <rect x="690" y="293" width="200" height="40" rx="8" fill="#1c2333" stroke="#6e7681" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="790" y="310" text-anchor="middle" fill="#6e7681" font-size="11" font-weight="600" font-family="Sora,sans-serif">S3 Glacier Deep Archive</text>
+      <text x="790" y="325" text-anchor="middle" fill="#484f58" font-size="9" font-family="JetBrains Mono,monospace">7–10yr compliance · $0.00099/GB</text>
+
+      <!-- Cold SLA label -->
+      <rect x="690" y="348" width="200" height="40" rx="8" fill="rgba(57,211,195,.06)" stroke="rgba(57,211,195,.2)" stroke-width="1"/>
+      <text x="790" y="365" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter,sans-serif">Retention: 90 days – 7+ years</text>
+      <text x="790" y="381" text-anchor="middle" fill="#39d3c3" font-size="10" font-family="JetBrains Mono,monospace">RTO: Hours</text>
+
+      <!-- ===== ANIMATED DATA FLOW LINES ===== -->
+
+      <!-- EC2 → EBS (hot, solid) -->
+      <line x1="181" y1="84" x2="230" y2="100" stroke="#f78166" stroke-width="2.5" marker-end="url(#flowArrowR)"/>
+
+      <!-- Database → S3 Standard (hot) -->
+      <line x1="181" y1="158" x2="230" y2="180" stroke="#f78166" stroke-width="2" marker-end="url(#flowArrowR)"/>
+
+      <!-- Backup Agent → S3 IA (cool) animated -->
+      <line x1="181" y1="232" x2="460" y2="100" stroke="#3fb950" stroke-width="2" class="flow-line" marker-end="url(#flowArrowG)"/>
+
+      <!-- Backup Agent → EBS Snapshot (cool) animated -->
+      <line x1="181" y1="232" x2="460" y2="262" stroke="#bc8cff" stroke-width="1.5" class="flow-line" marker-end="url(#flowArrowP)"/>
+
+      <!-- On-prem → S3 IA (cool) -->
+      <line x1="181" y1="306" x2="460" y2="180" stroke="#e3b341" stroke-width="1.5" class="flow-line-slow" marker-end="url(#flowArrowB)"/>
+
+      <!-- S3 Standard → S3 IA lifecycle (cool → cool) -->
+      <line x1="425" y1="180" x2="460" y2="180" stroke="#58a6ff" stroke-width="1.5" class="flow-line" marker-end="url(#flowArrowB)"/>
+      <text x="443" y="172" text-anchor="middle" fill="#58a6ff" font-size="9" font-family="Inter,sans-serif">Lifecycle</text>
+
+      <!-- S3 IA → Glacier Instant (cool → cold) animated -->
+      <line x1="640" y1="100" x2="690" y2="100" stroke="#39d3c3" stroke-width="2" class="flow-line" marker-end="url(#flowArrowT)"/>
+      <text x="665" y="92" text-anchor="middle" fill="#39d3c3" font-size="9" font-family="Inter,sans-serif">Lifecycle</text>
+
+      <!-- EBS Snapshot → Archive (cool → cold) animated -->
+      <line x1="640" y1="253" x2="690" y2="253" stroke="#3fb950" stroke-width="1.5" class="flow-line" marker-end="url(#flowArrowG)"/>
+      <text x="665" y="245" text-anchor="middle" fill="#3fb950" font-size="9" font-family="Inter,sans-serif">Archive</text>
+
+      <!-- Glacier → DR Recovery (restore arrow) -->
+      <line x1="675" y1="372" x2="181" y2="372" stroke="#39d3c3" stroke-width="1.5" class="flow-line-slow" stroke-dasharray="6,4" marker-end="url(#flowArrowT)"/>
+      <text x="428" y="388" text-anchor="middle" fill="#39d3c3" font-size="9" font-family="Inter,sans-serif">Restore on Failover</text>
+    </svg>
+    <div class="diagram-caption">Figure 8 — Cloud storage tiering block diagram: workloads on the left, animated data flows across Hot → Cool → Cold retention tiers</div>
+  </div>
+
+  <h3 id="s8-pipe">Data Lifecycle Pipeline — Step-by-Step Flow</h3>
+
+  <!-- Mermaid: Data lifecycle pipeline -->
+  <div class="diagram-wrap">
+    <div class="mermaid">
+sequenceDiagram
+    participant App as 🖥️ Application
+    participant EBS as 💾 EBS (Hot)
+    participant Snap as 📸 Snapshot (Cool)
+    participant Arc as 🗄️ Archive (Cold)
+    participant DR as 🔄 DR Region
+
+    App->>EBS: Write (sub-ms latency)
+    Note over EBS: Day 0–30: Active data<br/>gp3 / io2 volumes
+
+    EBS->>Snap: DLM Policy triggers snapshot
+    Note over Snap: Day 1–90: Standard tier<br/>S3-backed, instant restore
+
+    Snap->>Arc: Archive policy: tier to cold
+    Note over Arc: Day 90+: Archive tier<br/>75% cheaper, 24-72hr RTO
+
+    Snap->>DR: Cross-region copy
+    Note over DR: DR standby snapshot<br/>eu-central-1 secondary
+
+    Arc->>App: Disaster recovery restore
+    Note over App: Failover event:<br/>Restore archive → New EBS → Launch EC2
+    </div>
+    <div class="diagram-caption">Figure 9 — End-to-end data lifecycle: from live writes through tiered archival to DR failover restoration</div>
+  </div>
+
+  <div class="grid-3">
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--accent-orange)">0ms</div>
+      <div class="stat-label">Hot Tier Latency</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--accent-blue)">75%</div>
+      <div class="stat-label">Cold Tier Cost Saving</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--accent-teal)">11×9s</div>
+      <div class="stat-label">S3 Durability</div>
+    </div>
+  </div>
+
+  <h3>Storage Tier Selection Reference</h3>
+  <div class="card">
+    <table class="spec-table">
+      <thead>
+        <tr><th>Service</th><th>Tier</th><th>Retrieval Time</th><th>$/GB/mo</th><th>Best For</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>EBS gp3</td>
+          <td><span class="badge badge-orange">Hot</span></td>
+          <td>Sub-millisecond</td>
+          <td>~$0.08</td>
+          <td>Active application data</td>
+        </tr>
+        <tr>
+          <td>S3 Standard</td>
+          <td><span class="badge badge-orange">Hot</span></td>
+          <td>Milliseconds</td>
+          <td>~$0.023</td>
+          <td>Frequently accessed objects</td>
+        </tr>
+        <tr>
+          <td>S3 Standard-IA</td>
+          <td><span class="badge badge-blue">Cool</span></td>
+          <td>Milliseconds</td>
+          <td>~$0.0125</td>
+          <td>Backups, monthly reports</td>
+        </tr>
+        <tr>
+          <td>S3 Glacier Instant</td>
+          <td><span class="badge badge-teal">Cold</span></td>
+          <td>Milliseconds</td>
+          <td>~$0.004</td>
+          <td>Quarterly access archives</td>
+        </tr>
+        <tr>
+          <td>S3 Glacier Flexible</td>
+          <td><span class="badge badge-teal">Cold</span></td>
+          <td>1 min – 12 hrs</td>
+          <td>~$0.0036</td>
+          <td>Annual compliance archives</td>
+        </tr>
+        <tr>
+          <td>S3 Glacier Deep Archive</td>
+          <td><span class="badge" style="background:rgba(110,118,129,.15);color:#6e7681;border:1px solid #30363d">Frozen</span></td>
+          <td>12–48 hrs</td>
+          <td>~$0.00099</td>
+          <td>7–10 year regulatory retention</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===== SECTION 9: CLI REFERENCE ===== -->
+<section class="section" id="s9">
+  <div class="section-header">
+    <div class="section-icon icon-green">⌨️</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 09</div>
+      <h2>AWS CLI Quick Reference — EBS &amp; AMI Operations</h2>
+    </div>
+  </div>
+
+  <h4>EBS Volume Management</h4>
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">AWS CLI — EBS Volumes</span>
+      <div class="code-dots"><span class="dot-red"></span><span class="dot-ylw"></span><span class="dot-grn"></span></div>
+    </div>
+    <div class="code-body"><span class="comment"># List all EBS volumes in your account</span>
+<span class="cmd">aws ec2 describe-volumes</span> <span class="param">--filters</span> <span class="value">Name=status,Values=available</span>
+
+<span class="comment"># Create a new gp3 volume in a target AZ</span>
+<span class="cmd">aws ec2 create-volume</span> \
+  <span class="param">--volume-type</span> <span class="value">gp3</span> \
+  <span class="param">--size</span> <span class="value">100</span> \
+  <span class="param">--availability-zone</span> <span class="value">ap-southeast-1a</span> \
+  <span class="param">--iops</span> <span class="value">6000</span> \
+  <span class="param">--throughput</span> <span class="value">500</span> \
+  <span class="param">--encrypted</span>
+
+<span class="comment"># Attach a volume to a running EC2 instance</span>
+<span class="cmd">aws ec2 attach-volume</span> \
+  <span class="param">--volume-id</span> <span class="value">vol-0abc1234def56789a</span> \
+  <span class="param">--instance-id</span> <span class="value">i-0987654321abcdef0</span> \
+  <span class="param">--device</span> <span class="value">/dev/xvdf</span>
+
+<span class="comment"># Modify a gp2 volume to gp3 (cost optimization)</span>
+<span class="cmd">aws ec2 modify-volume</span> \
+  <span class="param">--volume-id</span> <span class="value">vol-0abc1234def56789a</span> \
+  <span class="param">--volume-type</span> <span class="value">gp3</span>
+
+<span class="comment"># Detach and delete a volume</span>
+<span class="cmd">aws ec2 detach-volume</span> <span class="param">--volume-id</span> <span class="value">vol-0abc1234def56789a</span>
+<span class="cmd">aws ec2 delete-volume</span> <span class="param">--volume-id</span> <span class="value">vol-0abc1234def56789a</span></div>
+  </div>
+
+  <h4>EBS Snapshot Operations</h4>
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">AWS CLI — EBS Snapshots</span>
+      <div class="code-dots"><span class="dot-red"></span><span class="dot-ylw"></span><span class="dot-grn"></span></div>
+    </div>
+    <div class="code-body"><span class="comment"># Create a snapshot of a volume</span>
+<span class="cmd">aws ec2 create-snapshot</span> \
+  <span class="param">--volume-id</span> <span class="value">vol-0abc1234def56789a</span> \
+  <span class="param">--description</span> <span class="value">"prod-backup-$(date +%Y%m%d)"</span> \
+  <span class="param">--tag-specifications</span> <span class="value">'ResourceType=snapshot,Tags=[{Key=Name,Value=prod-snap}]'</span>
+
+<span class="comment"># Copy snapshot to a DR region</span>
+<span class="cmd">aws ec2 copy-snapshot</span> \
+  <span class="param">--source-region</span> <span class="value">ap-southeast-1</span> \
+  <span class="param">--source-snapshot-id</span> <span class="value">snap-0abc1234def56789a</span> \
+  <span class="param">--destination-region</span> <span class="value">eu-central-1</span> \
+  <span class="param">--encrypted</span>
+
+<span class="comment"># Archive a snapshot to cold tier (75% cost reduction)</span>
+<span class="cmd">aws ec2 modify-snapshot-tier</span> \
+  <span class="param">--snapshot-id</span> <span class="value">snap-0abc1234def56789a</span> \
+  <span class="param">--storage-tier</span> <span class="value">archive</span>
+
+<span class="comment"># Restore a volume from snapshot in a different AZ</span>
+<span class="cmd">aws ec2 create-volume</span> \
+  <span class="param">--snapshot-id</span> <span class="value">snap-0abc1234def56789a</span> \
+  <span class="param">--availability-zone</span> <span class="value">ap-southeast-1b</span> \
+  <span class="param">--volume-type</span> <span class="value">gp3</span></div>
+  </div>
+
+  <h4>AMI Build &amp; Launch</h4>
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">AWS CLI — AMI Operations</span>
+      <div class="code-dots"><span class="dot-red"></span><span class="dot-ylw"></span><span class="dot-grn"></span></div>
+    </div>
+    <div class="code-body"><span class="comment"># Create an AMI from a running or stopped instance</span>
+<span class="cmd">aws ec2 create-image</span> \
+  <span class="param">--instance-id</span> <span class="value">i-0987654321abcdef0</span> \
+  <span class="param">--name</span> <span class="value">"golden-ami-webserver-v3.1.0"</span> \
+  <span class="param">--description</span> <span class="value">"Hardened web tier AMI with nginx 1.25"</span> \
+  <span class="param">--no-reboot</span>
+
+<span class="comment"># List available AMIs you own</span>
+<span class="cmd">aws ec2 describe-images</span> \
+  <span class="param">--owners</span> <span class="value">self</span> \
+  <span class="param">--filters</span> <span class="value">Name=state,Values=available</span> \
+  <span class="param">--query</span> <span class="value">'Images[*].{ID:ImageId,Name:Name,Created:CreationDate}'</span>
+
+<span class="comment"># Copy AMI to DR region</span>
+<span class="cmd">aws ec2 copy-image</span> \
+  <span class="param">--source-image-id</span> <span class="value">ami-0abc1234def56789a</span> \
+  <span class="param">--source-region</span> <span class="value">ap-southeast-1</span> \
+  <span class="param">--name</span> <span class="value">"golden-ami-webserver-v3.1.0-dr"</span> \
+  <span class="param">--region</span> <span class="value">eu-central-1</span>
+
+<span class="comment"># Launch instance from custom AMI</span>
+<span class="cmd">aws ec2 run-instances</span> \
+  <span class="param">--image-id</span> <span class="value">ami-0abc1234def56789a</span> \
+  <span class="param">--instance-type</span> <span class="value">t3.medium</span> \
+  <span class="param">--key-name</span> <span class="value">my-keypair</span> \
+  <span class="param">--security-group-ids</span> <span class="value">sg-0a1b2c3d4e5f67890</span> \
+  <span class="param">--subnet-id</span> <span class="value">subnet-0123456789abcdef0</span> \
+  <span class="param">--count</span> <span class="value">3</span></div>
+  </div>
+</section>
+
+<!-- ===== SECTION 10: INTERVIEW Q&A ===== -->
+<section class="section" id="s10">
+  <div class="section-header">
+    <div class="section-icon icon-purple">🎯</div>
+    <div class="section-title-wrap">
+      <div class="section-num">SECTION 10</div>
+      <h2>Scenario-Based Interview Questions &amp; Answers</h2>
+    </div>
+  </div>
+
+  <p>The following questions are drawn from real cloud architect and DevOps engineering interview scenarios involving EC2 storage design decisions.</p>
+
+  <div class="quiz-card">
+    <div class="quiz-q">Q1: Your company runs a financial transaction processing system on EC2. The database requires 200,000 IOPS and sub-millisecond response times. The data must survive instance restarts. What storage architecture would you recommend?</div>
+    <button class="quiz-btn" onclick="this.nextElementSibling.style.display='block';this.style.display='none'">Reveal Answer</button>
+    <div class="quiz-a">
+      <strong style="color:var(--accent-orange)">Recommended Architecture:</strong> Use <strong>io2 Block Express EBS volumes</strong> with provisioned IOPS. io2 Block Express supports up to 256,000 IOPS with sub-millisecond latency and maintains full durability — data survives stops and reboots. Instance Store is ruled out because the data durability requirement makes it unsuitable (data is lost on stop/terminate). <br/><br/>
+      For the OS: <code style="color:var(--accent-teal);background:rgba(57,211,195,.08);padding:2px 6px;border-radius:4px">gp3</code> root volume. For the database: <code style="color:var(--accent-teal);background:rgba(57,211,195,.08);padding:2px 6px;border-radius:4px">io2 Block Express</code> data volume with provisioned IOPS and Multi-Attach if required.
+    </div>
+  </div>
+
+  <div class="quiz-card">
+    <div class="quiz-q">Q2: A data science team runs nightly ML model training jobs on EC2. The jobs generate 500GB of intermediate tensor data that is only needed during the training run. How would you minimize storage cost while maximizing I/O performance?</div>
+    <button class="quiz-btn" onclick="this.nextElementSibling.style.display='block';this.style.display='none'">Reveal Answer</button>
+    <div class="quiz-a">
+      <strong style="color:var(--accent-orange)">Optimal Solution:</strong> Use <strong>EC2 Instance Store</strong> for intermediate tensor data. Since the data is only needed within the training run and can be regenerated if lost, the ephemeral nature of Instance Store is not a risk. You gain NVMe-speed I/O (millions of IOPS) at no additional storage cost — Instance Store is included in the instance price.<br/><br/>
+      Choose an <code style="color:var(--accent-teal);background:rgba(57,211,195,.08);padding:2px 6px;border-radius:4px">i4i</code> or <code style="color:var(--accent-teal);background:rgba(57,211,195,.08);padding:2px 6px;border-radius:4px">p4d</code> instance class which ships with NVMe Instance Store. Store model inputs/outputs on S3, and final trained models on EBS.
+    </div>
+  </div>
+
+  <div class="quiz-card">
+    <div class="quiz-q">Q3: Your team accidentally deleted a critical EBS snapshot. Leadership needs the data recovered urgently. What AWS features could have prevented this, and what recovery options exist now?</div>
+    <button class="quiz-btn" onclick="this.nextElementSibling.style.display='block';this.style.display='none'">Reveal Answer</button>
+    <div class="quiz-a">
+      <strong style="color:var(--accent-orange)">Prevention (what should have been in place):</strong> AWS Recycle Bin with a retention rule. When enabled, deleted EBS snapshots are held in the Recycle Bin rather than permanently destroyed. Retention can be configured from 1 day to 1 year.<br/><br/>
+      <strong style="color:var(--accent-blue)">Recovery options now:</strong><br/>
+      1. Check the <strong>Recycle Bin</strong> in the EC2 console — if a retention policy was configured, the snapshot may be recoverable.<br/>
+      2. If a cross-region copy was configured via DLM policy, check the DR region for a surviving copy.<br/>
+      3. If the EBS volume itself still exists (not deleted), create a new snapshot from it.<br/>
+      4. If none of the above — there is no AWS-native recovery. This is why Recycle Bin and cross-region replication are mandatory for production environments.
+    </div>
+  </div>
+
+  <div class="quiz-card">
+    <div class="quiz-q">Q4: Your organization is deploying a fleet of 200 auto-scaling web servers. Bootstrap scripts currently take 4 minutes per instance. How do you reduce cold start time to under 30 seconds?</div>
+    <button class="quiz-btn" onclick="this.nextElementSibling.style.display='block';this.style.display='none'">Reveal Answer</button>
+    <div class="quiz-a">
+      <strong style="color:var(--accent-orange)">Solution: Custom Golden AMI Strategy</strong><br/>
+      Build a custom AMI using <strong>EC2 Image Builder</strong> that includes all software dependencies (web server, monitoring agents, security tools) pre-installed and configured. Update this AMI monthly with patched packages.<br/><br/>
+      In the Auto Scaling Group launch template, point to this golden AMI. New instances boot with everything pre-installed — the only startup work needed is environment-specific configuration (fetching configs from Parameter Store, setting hostname, registering with load balancer). This typically reduces cold start from 4+ minutes to under 30 seconds.<br/><br/>
+      Pair with <strong>Fast Snapshot Restore</strong> (FSR) on the AMI's backing EBS snapshot to eliminate first-boot I/O latency for high-frequency scaling events.
+    </div>
+  </div>
+
+  <div class="quiz-card">
+    <div class="quiz-q">Q5: Design a cost-optimized backup architecture for a production MySQL database with the following requirements: 15-minute RPO, 2-hour RTO for the primary region, and 24-hour RTO for a secondary DR region.</div>
+    <button class="quiz-btn" onclick="this.nextElementSibling.style.display='block';this.style.display='none'">Reveal Answer</button>
+    <div class="quiz-a">
+      <strong style="color:var(--accent-orange)">Architecture Design:</strong><br/><br/>
+      <strong style="color:var(--accent-blue)">Primary Region (2-hour RTO):</strong><br/>
+      • EBS gp3 volume for MySQL data with automatic EBS snapshots every 15 minutes via DLM policy → meets 15-min RPO<br/>
+      • Keep last 48 snapshots in standard tier (2 days coverage) → immediate restore capability meets 2-hour RTO<br/><br/>
+      <strong style="color:var(--accent-teal)">DR Region (24-hour RTO):</strong><br/>
+      • DLM policy copies daily snapshots to secondary region<br/>
+      • Archive these DR copies after 30 days to EBS Snapshot Archive tier (75% cost saving)<br/>
+      • For a 24-hour RTO, archived snapshots are acceptable — the 24–72 hour restore window fits the requirement<br/><br/>
+      <strong style="color:var(--accent-green)">Cost levers:</strong> Standard tier for recent 48 hours, archive for everything older, DLM automates entire lifecycle without manual intervention.
+    </div>
+  </div>
+</section>
+
+<!-- ===== AUTHOR SECTION ===== -->
+<section class="section" id="author">
+  <div class="author-card">
+    <div class="author-avatar">👨‍💻</div>
+    <div class="author-name">Mohammed Abdul</div>
+    <div class="author-title">Data Protection Architect · Cloud Storage Specialist</div>
+    <div class="author-bio">
+      Mohammed Abdul is a Data Protection Architect with more than 10 years of experience in Hybrid Cloud and has worked with global clients across various industries. With extensive expertise in enterprise backup and recovery solutions, Mohammed specializes in AWS, Azure, GCP, Commvault, Veeam, NetBackup, and NetApp technologies, helping organizations design and implement robust data protection strategies.
+    </div>
+    <div class="tech-badges">
+      <span class="tech-badge">AWS</span>
+      <span class="tech-badge">Azure</span>
+      <span class="tech-badge">GCP</span>
+      <span class="tech-badge">Commvault</span>
+      <span class="tech-badge">Veeam</span>
+      <span class="tech-badge">NetBackup</span>
+      <span class="tech-badge">NetApp</span>
+      <span class="tech-badge">Hybrid Cloud</span>
+    </div>
+    <a class="contact-link" href="mailto:abdul.md.20000102@gmail.com">✉️ abdul.md.20000102@gmail.com</a>
+    <div class="disclaimer">
+      <strong>Disclaimer:</strong> This content is for educational purposes and tutorial material only. All IP addresses, hostnames, resource IDs, and configuration values shown are illustrative examples and do not represent real systems. Always refer to the official AWS documentation and follow your organization's procedures and security standards for production implementations.
+    </div>
+  </div>
+</section>
+
+</div><!-- end content-area -->
+</div><!-- end main-content -->
+
+<script>
+// Reading progress bar
+const progressBar = document.getElementById('reading-progress');
+const mainContent = document.querySelector('.main-content');
+window.addEventListener('scroll', () => {
+  const scrollTop = window.scrollY;
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+  const progress = docHeight > 0 ? scrollTop / docHeight : 0;
+  progressBar.style.transform = `scaleX(${progress})`;
+});
+
+// Active TOC link tracking
+const sections = document.querySelectorAll('.section');
+const tocLinks = document.querySelectorAll('.toc-link');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id;
+      tocLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('href') === '#' + id) {
+          link.classList.add('active');
+        }
+      });
+    }
+  });
+}, { rootMargin: '-20% 0px -60% 0px' });
+sections.forEach(s => observer.observe(s));
+
+// Initialize Mermaid
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: {
+    background: '#1c2333',
+    primaryColor: '#1c2333',
+    primaryTextColor: '#e6edf3',
+    primaryBorderColor: '#f78166',
+    lineColor: '#58a6ff',
+    secondaryColor: '#161b22',
+    tertiaryColor: '#0d1117',
+    edgeLabelBackground: '#1c2333',
+    nodeBorder: '#484f58',
+    clusterBkg: '#161b22',
+    titleColor: '#e6edf3',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

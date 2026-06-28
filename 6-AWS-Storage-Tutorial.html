@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS S3 Security Deep Dive — Encryption, CORS & MFA Delete | Cloud Storage Tutorial</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-card: #1c2230;
+    --bg-sidebar: #111827;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border-color: #2d3748;
+    --border-bright: #374151;
+    --sidebar-width: 280px;
+    --header-height: 64px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    display: flex;
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  /* ── Sidebar ─────────────────────────────── */
+  .sidebar {
+    width: var(--sidebar-width);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    overflow-y: auto;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar-logo { padding: 20px 20px 16px; border-bottom: 1px solid var(--border-color); }
+  .sidebar-logo .brand { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 600; color: var(--accent-cyan); letter-spacing: 0.08em; text-transform: uppercase; }
+  .sidebar-logo .subtitle { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+  .toc-title { padding: 16px 20px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+  .toc-list { list-style: none; padding: 0 8px 20px; }
+  .toc-list li a {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-radius: 6px; text-decoration: none; color: var(--text-secondary);
+    font-size: 13px; font-weight: 400; transition: all 0.2s;
+  }
+  .toc-list li a:hover, .toc-list li a.active { background: rgba(59,130,246,0.12); color: var(--accent-blue); }
+  .toc-list li a .icon { font-size: 14px; width: 18px; flex-shrink: 0; }
+  .toc-list li a .num { font-size: 10px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 1px 5px; border-radius: 3px; color: var(--text-muted); margin-left: auto; }
+  .toc-divider { height: 1px; background: var(--border-color); margin: 8px 12px; }
+
+  .main-content { margin-left: var(--sidebar-width); flex: 1; min-height: 100vh; }
+
+  .page-header {
+    background: linear-gradient(135deg, #0f1f3d 0%, #0d1a2e 50%, #081525 100%);
+    border-bottom: 1px solid var(--border-color);
+    padding: 56px 60px 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  .page-header::before { content: ''; position: absolute; top: -60px; right: -60px; width: 400px; height: 400px; background: radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%); pointer-events: none; }
+  .page-header::after { content: ''; position: absolute; bottom: -80px; left: 200px; width: 300px; height: 300px; background: radial-gradient(circle, rgba(6,182,212,0.07) 0%, transparent 70%); pointer-events: none; }
+
+  .header-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.3); color: var(--accent-blue); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 20px; }
+  .page-title { font-family: 'Sora', sans-serif; font-size: 36px; font-weight: 700; color: #fff; line-height: 1.2; margin-bottom: 12px; }
+  .page-title span { color: var(--accent-cyan); }
+  .page-subtitle { font-size: 16px; color: var(--text-secondary); max-width: 640px; margin-bottom: 28px; }
+  .header-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+  .tag-blue { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+  .tag-cyan { background: rgba(6,182,212,0.12); color: #22d3ee; border: 1px solid rgba(6,182,212,0.25); }
+  .tag-green { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+  .tag-amber { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+
+  .content-wrap { max-width: 900px; padding: 48px 60px 80px; }
+
+  .section-label { display: inline-flex; align-items: center; gap: 8px; background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2); color: var(--accent-cyan); padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; }
+  h2.section-heading { font-family: 'Sora', sans-serif; font-size: 26px; font-weight: 700; color: #fff; margin-bottom: 6px; padding-top: 4px; }
+  .section-intro { color: var(--text-secondary); font-size: 15px; margin-bottom: 28px; max-width: 700px; }
+  h3 { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 600; color: #e2e8f0; margin: 28px 0 12px; }
+  h4 { font-family: 'Sora', sans-serif; font-size: 15px; font-weight: 600; color: #cbd5e1; margin: 20px 0 8px; }
+  p { margin-bottom: 14px; color: var(--text-secondary); }
+
+  .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+  .card-title { font-family: 'Sora', sans-serif; font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+
+  .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin: 20px 0 28px; }
+  .product-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; transition: border-color 0.2s, transform 0.2s; position: relative; overflow: hidden; }
+  .product-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+  .product-card.blue::before { background: var(--accent-blue); }
+  .product-card.cyan::before { background: var(--accent-cyan); }
+  .product-card.green::before { background: var(--accent-green); }
+  .product-card.amber::before { background: var(--accent-amber); }
+  .product-card.purple::before { background: var(--accent-purple); }
+  .product-card:hover { border-color: var(--border-bright); transform: translateY(-2px); }
+  .product-card .pname { font-family: 'Sora', sans-serif; font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .product-card .pfull { font-size: 11px; color: var(--text-muted); font-style: italic; margin-bottom: 10px; }
+  .product-card .pbadge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; margin-bottom: 10px; }
+  .product-card .pdesc { font-size: 13px; color: var(--text-secondary); margin: 0; }
+  .product-card .pos { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+  .badge-default { background: rgba(16,185,129,0.15); color: #34d399; }
+  .badge-kms { background: rgba(245,158,11,0.15); color: #fcd34d; }
+  .badge-custom { background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .badge-client { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+
+  .callout { border-radius: 8px; padding: 16px 20px; display: flex; gap: 12px; margin: 18px 0; }
+  .callout-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .callout-title { font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+  .callout-text { font-size: 13.5px; margin: 0; line-height: 1.6; }
+  .callout.tip { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25); }
+  .callout.tip .callout-title { color: #34d399; }
+  .callout.tip .callout-text { color: #a7f3d0; }
+  .callout.warning { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); }
+  .callout.warning .callout-title { color: #fcd34d; }
+  .callout.warning .callout-text { color: #fde68a; }
+  .callout.info { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); }
+  .callout.info .callout-title { color: #93c5fd; }
+  .callout.info .callout-text { color: #bfdbfe; }
+  .callout.exam { background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.25); }
+  .callout.exam .callout-title { color: #c4b5fd; }
+  .callout.exam .callout-text { color: #ddd6fe; }
+  .callout.note { background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2); }
+  .callout.note .callout-title { color: #67e8f9; }
+  .callout.note .callout-text { color: #cffafe; }
+
+  pre, code { font-family: 'JetBrains Mono', monospace; }
+  pre { background: #0a0f1a; border: 1px solid var(--border-color); border-left: 3px solid var(--accent-blue); border-radius: 6px; padding: 18px 20px; overflow-x: auto; font-size: 13px; color: #a5d8ff; margin: 14px 0; line-height: 1.6; }
+  code { background: rgba(59,130,246,0.1); color: #93c5fd; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  pre code { background: none; color: inherit; padding: 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 14px; }
+  thead th { background: var(--bg-secondary); color: var(--accent-cyan); font-family: 'Sora', sans-serif; font-weight: 600; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; padding: 12px 16px; border-bottom: 2px solid var(--border-color); text-align: left; }
+  tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); vertical-align: top; }
+  tbody tr:hover td { background: rgba(59,130,246,0.04); }
+  tbody td:first-child { color: #e2e8f0; font-weight: 500; }
+
+  .section-sep { border: none; border-top: 1px solid var(--border-color); margin: 52px 0 44px; }
+
+  .steps-list { counter-reset: step-counter; list-style: none; margin: 16px 0; }
+  .steps-list li { counter-increment: step-counter; display: flex; gap: 14px; margin-bottom: 14px; align-items: flex-start; }
+  .steps-list li::before { content: counter(step-counter); background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan)); color: #fff; font-weight: 700; font-size: 12px; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .steps-list li span { font-size: 14px; color: var(--text-secondary); }
+
+  .diagram-wrap { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 24px; margin: 20px 0; overflow-x: auto; }
+  .diagram-caption { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+  .node-box { transition: filter 0.2s ease; }
+  .node-box:hover { filter: drop-shadow(0 0 6px rgba(59,130,246,0.6)); }
+  .flow-dash { stroke-dasharray: 6 5; animation: dashmove 1.6s linear infinite; }
+  @keyframes dashmove { to { stroke-dashoffset: -22; } }
+
+  .qa-list { margin: 16px 0; }
+  .qa-item { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 18px 20px; margin-bottom: 14px; }
+  .qa-q { font-weight: 600; color: #e2e8f0; font-size: 14px; margin-bottom: 10px; display: flex; gap: 8px; align-items: flex-start; }
+  .qa-q::before { content: 'Q'; background: var(--accent-blue); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 3px; font-family: 'Sora', sans-serif; flex-shrink: 0; margin-top: 2px; }
+  .qa-a { font-size: 13.5px; color: var(--text-secondary); padding-left: 28px; line-height: 1.7; margin: 0; }
+
+  .author-section { background: linear-gradient(135deg, #0f1f3d 0%, #0d1a2e 100%); border: 1px solid rgba(59,130,246,0.25); border-radius: 12px; padding: 32px; margin-top: 56px; }
+  .author-header { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px; }
+  .author-avatar { width: 70px; height: 70px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan)); display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
+  .author-meta h3 { margin: 0 0 4px; font-size: 20px; color: #fff; }
+  .author-meta .role { font-size: 13px; color: var(--accent-cyan); margin-bottom: 8px; }
+  .author-meta p { font-size: 14px; color: var(--text-secondary); margin: 0; }
+  .tech-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+  .tech-badge { background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.25); color: #93c5fd; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+  .email-card { display: inline-flex; align-items: center; gap: 8px; background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.25); padding: 10px 16px; border-radius: 8px; text-decoration: none; color: var(--accent-cyan); font-size: 14px; font-weight: 500; transition: background 0.2s; margin-top: 8px; }
+  .email-card:hover { background: rgba(6,182,212,0.14); }
+  .disclaimer-box { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.2); border-radius: 8px; padding: 14px 18px; margin-top: 20px; font-size: 12.5px; color: #fde68a; line-height: 1.6; }
+  .disclaimer-box strong { color: #fcd34d; }
+
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main-content { margin-left: 0; }
+    .page-header { padding: 36px 24px 32px; }
+    .content-wrap { padding: 32px 24px 60px; }
+    .page-title { font-size: 26px; }
+    .product-grid { grid-template-columns: 1fr; }
+  }
+
+  .highlight { color: var(--accent-cyan); font-weight: 600; }
+  ul.bullet-list { list-style: none; margin: 10px 0; }
+  ul.bullet-list li { font-size: 14px; color: var(--text-secondary); padding: 5px 0; padding-left: 18px; position: relative; }
+  ul.bullet-list li::before { content: '▸'; position: absolute; left: 0; color: var(--accent-cyan); font-size: 12px; }
+  .page-section { scroll-margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<!-- ═══ SIDEBAR ═══════════════════════════════════════════════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="brand">☁️ Cloud Storage Tutorials</div>
+    <div class="subtitle">S3 Encryption · CORS · MFA Delete</div>
+  </div>
+
+  <div class="toc-title">Table of Contents</div>
+  <ul class="toc-list">
+    <li><a href="#overview"><span class="icon">🧭</span> Encryption Overview <span class="num">01</span></a></li>
+    <li><a href="#sse-s3"><span class="icon">🔑</span> SSE-S3 <span class="num">02</span></a></li>
+    <li><a href="#sse-kms"><span class="icon">🗝️</span> SSE-KMS <span class="num">03</span></a></li>
+    <li><a href="#sse-c"><span class="icon">🔐</span> SSE-C <span class="num">04</span></a></li>
+    <li><a href="#client-side"><span class="icon">💻</span> Client-Side Encryption <span class="num">05</span></a></li>
+    <li><a href="#transit"><span class="icon">🛰️</span> Encryption In Transit <span class="num">06</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#hands-on-encryption"><span class="icon">🧪</span> Hands-On: Encryption <span class="num">07</span></a></li>
+    <li><a href="#default-encryption"><span class="icon">⚙️</span> Default Encryption &amp; Policies <span class="num">08</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#cors"><span class="icon">🌐</span> CORS Fundamentals <span class="num">09</span></a></li>
+    <li><a href="#cors-hands-on"><span class="icon">🧪</span> Hands-On: CORS <span class="num">10</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#mfa-delete"><span class="icon">🛡️</span> MFA Delete <span class="num">11</span></a></li>
+    <li><a href="#mfa-hands-on"><span class="icon">🧪</span> Hands-On: MFA Delete <span class="num">12</span></a></li>
+    <div class="toc-divider"></div>
+    <li><a href="#interview"><span class="icon">💼</span> Interview Q&amp;A <span class="num">13</span></a></li>
+    <li><a href="#about"><span class="icon">👤</span> About the Author <span class="num">14</span></a></li>
+  </ul>
+</nav>
+
+<!-- ═══ MAIN CONTENT ══════════════════════════════════════════════════════ -->
+<main class="main-content">
+
+  <div class="page-header">
+    <div class="header-badge">☁️ Cloud Storage Security Tutorial Series</div>
+    <h1 class="page-title">AWS S3 Security Deep Dive<br><span>Encryption · CORS · MFA Delete</span></h1>
+    <p class="page-subtitle">A complete guide to securing Amazon S3 data — server-side and client-side encryption mechanisms, default encryption with bucket policies, Cross-Origin Resource Sharing, and Multi-Factor Authentication Delete — built for cloud and data protection professionals.</p>
+    <div class="header-tags">
+      <span class="tag tag-blue">Service: Amazon S3</span>
+      <span class="tag tag-cyan">Level: Associate → Professional</span>
+      <span class="tag tag-green">Data Protection Focus</span>
+      <span class="tag tag-amber">Exam &amp; Interview Prep Included</span>
+    </div>
+  </div>
+
+  <div class="content-wrap">
+
+    <!-- ══ SECTION 01: Encryption Overview ══════════════════════════════ -->
+    <section id="overview" class="page-section">
+      <div class="section-label">📍 Section 01</div>
+      <h2 class="section-heading">Object Encryption — Overview</h2>
+      <p class="section-intro">Amazon S3 supports four distinct mechanisms for protecting object data at rest. Choosing the right one depends on who needs to own and manage the encryption key, and how much operational overhead you are willing to accept.</p>
+
+      <div class="product-grid">
+        <div class="product-card green">
+          <div class="pname">SSE-S3</div>
+          <div class="pfull">Server-Side Encryption, S3-Managed Keys</div>
+          <span class="pbadge badge-default">Enabled by default</span>
+          <p class="pdesc">AWS owns and rotates the key. Encryption uses AES-256. Zero configuration required.</p>
+        </div>
+        <div class="product-card amber">
+          <div class="pname">SSE-KMS</div>
+          <div class="pfull">Server-Side Encryption, AWS KMS-Managed Keys</div>
+          <span class="pbadge badge-kms">User-managed key</span>
+          <p class="pdesc">You create and control the CMK. Every use is logged in CloudTrail for full auditability.</p>
+        </div>
+        <div class="product-card blue">
+          <div class="pname">SSE-C</div>
+          <div class="pfull">Server-Side Encryption, Customer-Provided Keys</div>
+          <span class="pbadge badge-custom">Key never stored</span>
+          <p class="pdesc">You supply the key with every request over HTTPS. AWS discards it immediately after use.</p>
+        </div>
+        <div class="product-card purple">
+          <div class="pname">Client-Side Encryption</div>
+          <div class="pfull">Encrypt Before Upload</div>
+          <span class="pbadge badge-client">Fully client-managed</span>
+          <p class="pdesc">Data is encrypted and decrypted entirely outside of AWS using a client-side library.</p>
+        </div>
+      </div>
+
+      <div class="callout exam">
+        <div class="callout-icon">💼</div>
+        <div class="callout-body">
+          <div class="callout-title">Exam Tip — Know the Header for Each Mode</div>
+          <p class="callout-text">Each server-side mode is requested with a specific HTTP header on the upload request: <code>x-amz-server-side-encryption: AES256</code> for SSE-S3, <code>x-amz-server-side-encryption: aws:kms</code> for SSE-KMS, and a set of <code>x-amz-server-side-encryption-customer-*</code> headers for SSE-C. Exam questions frequently test which header maps to which mode.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 02: SSE-S3 ══════════════════════════════ -->
+    <section id="sse-s3" class="page-section">
+      <div class="section-label">📍 Section 02</div>
+      <h2 class="section-heading">SSE-S3 — S3-Managed Keys</h2>
+      <p class="section-intro">The simplest encryption mode. AWS owns, manages, and rotates the encryption key entirely on your behalf — you never see or interact with it.</p>
+
+      <ul class="bullet-list">
+        <li>Encryption type: <span class="highlight">AES-256</span></li>
+        <li>Key is owned and fully managed by AWS — never exposed to the customer</li>
+        <li>Required header: <code>x-amz-server-side-encryption: AES256</code></li>
+        <li>Enabled by default on every new bucket and every new object</li>
+      </ul>
+
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#3b82f6"/>
+              <stop offset="100%" stop-color="#06b6d4"/>
+            </linearGradient>
+          </defs>
+          <text x="380" y="26" text-anchor="middle" fill="#67e8f9" font-size="13" font-family="Sora, sans-serif" font-weight="600">SSE-S3 Encryption Flow</text>
+
+          <g class="node-box">
+            <rect x="20" y="70" width="130" height="60" rx="10" fill="#1e4080" stroke="#60a5fa" stroke-width="1.5"/>
+            <text x="85" y="95" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Client</text>
+            <text x="85" y="113" text-anchor="middle" fill="#93c5fd" font-size="10">uploads object</text>
+          </g>
+
+          <line x1="150" y1="100" x2="280" y2="100" stroke="#94a3b8" stroke-width="2" class="flow-dash" marker-end="url(#arrow1)"/>
+
+          <g class="node-box">
+            <rect x="290" y="70" width="170" height="60" rx="10" fill="#0d1e35" stroke="#3b82f6" stroke-width="1.5"/>
+            <text x="375" y="92" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Amazon S3 Bucket</text>
+            <text x="375" y="110" text-anchor="middle" fill="#93c5fd" font-size="10">data-vault-secure-01</text>
+          </g>
+
+          <line x1="460" y1="100" x2="580" y2="100" stroke="#94a3b8" stroke-width="2" class="flow-dash" marker-end="url(#arrow1)"/>
+
+          <g class="node-box">
+            <rect x="590" y="40" width="150" height="55" rx="10" fill="#1e3a1e" stroke="#34d399" stroke-width="1.5"/>
+            <text x="665" y="62" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">AWS-Owned Key</text>
+            <text x="665" y="78" text-anchor="middle" fill="#86efac" font-size="10">never exposed</text>
+          </g>
+
+          <line x1="665" y1="95" x2="665" y2="135" stroke="#94a3b8" stroke-width="2"/>
+          <line x1="590" y1="145" x2="660" y2="120" stroke="#94a3b8" stroke-width="1.5" class="flow-dash"/>
+
+          <g class="node-box">
+            <rect x="560" y="150" width="180" height="55" rx="10" fill="#0f3a5a" stroke="#06b6d4" stroke-width="1.5"/>
+            <text x="650" y="172" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">AES-256 Encrypted Object</text>
+            <text x="650" y="190" text-anchor="middle" fill="#67e8f9" font-size="10">stored at rest</text>
+          </g>
+
+          <defs>
+            <marker id="arrow1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="#94a3b8"/>
+            </marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">Fig 2.1 — Client uploads to S3; S3 pairs the object with an S3-owned key and stores it AES-256 encrypted.</div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 03: SSE-KMS ══════════════════════════════ -->
+    <section id="sse-kms" class="page-section">
+      <div class="section-label">📍 Section 03</div>
+      <h2 class="section-heading">SSE-KMS — AWS KMS-Managed Keys</h2>
+      <p class="section-intro">SSE-KMS hands key ownership to you via AWS Key Management Service, adding auditability and granular access control at the cost of API throughput limits.</p>
+
+      <div class="card">
+        <div class="card-title">✅ Advantages</div>
+        <ul class="bullet-list">
+          <li>You create and control the Customer Master Key (CMK) yourself</li>
+          <li>Every encrypt/decrypt call is logged in <span class="highlight">AWS CloudTrail</span> for auditing</li>
+          <li>Required header: <code>x-amz-server-side-encryption: aws:kms</code></li>
+        </ul>
+      </div>
+
+      <div class="callout warning">
+        <div class="callout-icon">⚠️</div>
+        <div class="callout-body">
+          <div class="callout-title">Warning — KMS API Quotas</div>
+          <p class="callout-text">Reading or writing an SSE-KMS object triggers a call to the KMS <code>GenerateDataKey</code> or <code>Decrypt</code> API. These calls count against your regional KMS quota — typically <strong>5,500 to 30,000 requests/second</strong> depending on region (raisable via Service Quotas). High-throughput S3 workloads fully encrypted with SSE-KMS can hit this ceiling and get throttled.</p>
+        </div>
+      </div>
+
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg">
+          <text x="380" y="24" text-anchor="middle" fill="#67e8f9" font-size="13" font-family="Sora, sans-serif" font-weight="600">SSE-KMS Encryption Flow</text>
+
+          <g class="node-box">
+            <rect x="20" y="65" width="130" height="60" rx="10" fill="#1e4080" stroke="#60a5fa" stroke-width="1.5"/>
+            <text x="85" y="90" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Client</text>
+            <text x="85" y="108" text-anchor="middle" fill="#93c5fd" font-size="10">+ KMS key ID header</text>
+          </g>
+
+          <line x1="150" y1="95" x2="280" y2="95" stroke="#94a3b8" stroke-width="2" class="flow-dash"/>
+
+          <g class="node-box">
+            <rect x="290" y="65" width="170" height="60" rx="10" fill="#0d1e35" stroke="#3b82f6" stroke-width="1.5"/>
+            <text x="375" y="87" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Amazon S3 Bucket</text>
+            <text x="375" y="105" text-anchor="middle" fill="#93c5fd" font-size="10">finance-records-enc-02</text>
+          </g>
+
+          <line x1="375" y1="65" x2="375" y2="30" stroke="#94a3b8" stroke-width="1.5"/>
+          <line x1="460" y1="95" x2="580" y2="60" stroke="#94a3b8" stroke-width="2" class="flow-dash"/>
+
+          <g class="node-box">
+            <rect x="590" y="25" width="150" height="60" rx="10" fill="#3a2e0f" stroke="#fcd34d" stroke-width="1.5"/>
+            <text x="665" y="48" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">AWS KMS</text>
+            <text x="665" y="65" text-anchor="middle" fill="#fde68a" font-size="10">customer-managed CMK</text>
+          </g>
+
+          <line x1="665" y1="85" x2="665" y2="125" stroke="#fcd34d" stroke-width="1.5" class="flow-dash"/>
+
+          <g class="node-box">
+            <rect x="565" y="130" width="175" height="55" rx="10" fill="#3a1f0f" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="652" y="152" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">AWS CloudTrail</text>
+            <text x="652" y="170" text-anchor="middle" fill="#fcd34d" font-size="10">logs every key use</text>
+          </g>
+        </svg>
+        <div class="diagram-caption">Fig 3.1 — The object and the referenced KMS key are combined; every KMS call is recorded in CloudTrail.</div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 04: SSE-C ══════════════════════════════ -->
+    <section id="sse-c" class="page-section">
+      <div class="section-label">📍 Section 04</div>
+      <h2 class="section-heading">SSE-C — Customer-Provided Keys</h2>
+      <p class="section-intro">With SSE-C, encryption still happens server-side inside S3, but the key itself lives entirely outside of AWS and must be supplied on every request.</p>
+
+      <ul class="bullet-list">
+        <li>Key is managed by the customer, <em>outside</em> AWS</li>
+        <li>S3 uses the key to encrypt the object, then immediately discards it — S3 never stores your key</li>
+        <li><strong>HTTPS is mandatory</strong> — the key travels as part of the HTTP headers on every request</li>
+        <li>To later read the object, you must supply the exact same key again</li>
+      </ul>
+
+      <div class="callout note">
+        <div class="callout-icon">📝</div>
+        <div class="callout-body">
+          <div class="callout-title">Notes — Console Limitation</div>
+          <p class="callout-text">SSE-C cannot be configured from the AWS Management Console. It is only available through the AWS CLI or SDKs, since the console has no secure way to accept and transmit a raw customer key.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 05: Client-Side Encryption ══════════════════════════════ -->
+    <section id="client-side" class="page-section">
+      <div class="section-label">📍 Section 05</div>
+      <h2 class="section-heading">Client-Side Encryption</h2>
+      <p class="section-intro">The client fully owns the encryption lifecycle — data is encrypted before it ever leaves the client and decrypted only after S3 returns it.</p>
+
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 700 160" xmlns="http://www.w3.org/2000/svg">
+          <text x="350" y="22" text-anchor="middle" fill="#67e8f9" font-size="13" font-family="Sora, sans-serif" font-weight="600">Client-Side Encryption Pipeline</text>
+
+          <g class="node-box">
+            <rect x="20" y="50" width="130" height="55" rx="10" fill="#1e4080" stroke="#60a5fa" stroke-width="1.5"/>
+            <text x="85" y="73" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">Plaintext File</text>
+            <text x="85" y="90" text-anchor="middle" fill="#93c5fd" font-size="10">report-q3.csv</text>
+          </g>
+
+          <line x1="150" y1="77" x2="240" y2="77" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow2)"/>
+
+          <g class="node-box">
+            <rect x="250" y="50" width="150" height="55" rx="10" fill="#2a0f3a" stroke="#c4b5fd" stroke-width="1.5"/>
+            <text x="325" y="73" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">Client-Side Library</text>
+            <text x="325" y="90" text-anchor="middle" fill="#ddd6fe" font-size="10">+ client-managed key</text>
+          </g>
+
+          <line x1="400" y1="77" x2="480" y2="77" stroke="#94a3b8" stroke-width="2" class="flow-dash" marker-end="url(#arrow2)"/>
+
+          <g class="node-box">
+            <rect x="490" y="50" width="190" height="55" rx="10" fill="#0f3a5a" stroke="#06b6d4" stroke-width="1.5"/>
+            <text x="585" y="73" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">Amazon S3 Bucket</text>
+            <text x="585" y="90" text-anchor="middle" fill="#67e8f9" font-size="10">already-encrypted upload</text>
+          </g>
+          <defs>
+            <marker id="arrow2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="#94a3b8"/>
+            </marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">Fig 5.1 — Encryption (and later decryption) happens entirely outside S3, on the client.</div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 06: Transit ══════════════════════════════ -->
+    <section id="transit" class="page-section">
+      <div class="section-label">📍 Section 06</div>
+      <h2 class="section-heading">Encryption In Transit (SSL/TLS)</h2>
+      <p class="section-intro">Separate from at-rest encryption, every S3 bucket exposes both an unencrypted HTTP endpoint and an encrypted HTTPS endpoint.</p>
+
+      <ul class="bullet-list">
+        <li>HTTPS = encryption in transit, also called SSL/TLS</li>
+        <li>Most SDKs and the AWS CLI use HTTPS by default — nothing extra to configure</li>
+        <li>SSE-C <strong>requires</strong> HTTPS, since the customer key travels in the request headers</li>
+      </ul>
+
+      <h4>Force HTTPS-Only Access with a Bucket Policy</h4>
+      <pre><code>{
+  "Effect": "Deny",
+  "Principal": "*",
+  "Action": "s3:GetObject",
+  "Resource": "arn:aws:s3:::data-vault-secure-01/*",
+  "Condition": {
+    "Bool": { "aws:SecureTransport": "false" }
+  }
+}</code></pre>
+      <p>This statement denies any <code>GetObject</code> call where <code>aws:SecureTransport</code> evaluates to <code>false</code> — in other words, any request not made over HTTPS.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 07: Hands-On Encryption ══════════════════════════════ -->
+    <section id="hands-on-encryption" class="page-section">
+      <div class="section-label">📍 Section 07</div>
+      <h2 class="section-heading">Hands-On — Configuring Encryption</h2>
+      <p class="section-intro">A step-by-step walkthrough of enabling and switching encryption modes on a real bucket using the AWS Console.</p>
+
+      <ol class="steps-list">
+        <li><span>Create a bucket named <code>data-vault-secure-01</code> and enable <strong>bucket versioning</strong> so that encryption changes create new object versions instead of overwriting history.</span></li>
+        <li><span>Under <strong>Default encryption</strong>, select <strong>SSE-S3</strong> initially, then create the bucket.</span></li>
+        <li><span>Upload a test object, e.g. <code>sample-image.jpg</code>. Open its properties and confirm it shows <strong>Server-side encryption: SSE-S3</strong>.</span></li>
+        <li><span>Click <strong>Edit</strong> on the object's encryption settings, switch it to <strong>SSE-KMS</strong>, and choose the AWS-managed default key <code>aws/s3</code> (no extra KMS cost). Save — this creates a new object version.</span></li>
+        <li><span>Under <strong>Versions</strong>, confirm two versions now exist and that the latest one shows <strong>SSE-KMS</strong> with the <code>aws/s3</code> key.</span></li>
+        <li><span>Open <strong>Default encryption → Edit</strong> at the bucket level to change the bucket-wide default between SSE-S3, SSE-KMS, and DSSE-KMS (double-layer KMS encryption).</span></li>
+      </ol>
+
+      <div class="callout note">
+        <div class="callout-icon">📝</div>
+        <div class="callout-body">
+          <div class="callout-title">Notes — What's Missing from the Console</div>
+          <p class="callout-text">SSE-C cannot be selected anywhere in the console — CLI/SDK only. Client-side encryption is never configured in S3 at all, since AWS has no visibility into it; encryption and decryption both happen entirely on the client before/after the transfer.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 08: Default Encryption & Bucket Policies ══════════════════════════════ -->
+    <section id="default-encryption" class="page-section">
+      <div class="section-label">📍 Section 08</div>
+      <h2 class="section-heading">Default Encryption vs. Bucket Policies</h2>
+      <p class="section-intro">Every S3 bucket now defaults to SSE-S3 automatically, but bucket policies give you a second, stricter layer of enforcement.</p>
+
+      <ul class="bullet-list">
+        <li>Default encryption (SSE-S3) is applied automatically to every new bucket and object</li>
+        <li>You can change the bucket-wide default to SSE-KMS or DSSE-KMS</li>
+        <li>A bucket policy can <strong>deny</strong> any <code>PutObject</code> request that lacks the correct encryption header — enforcing SSE-KMS or SSE-C explicitly</li>
+        <li><strong>Bucket policies are evaluated before default encryption settings</strong></li>
+      </ul>
+
+      <pre><code>{
+  "Effect": "Deny",
+  "Principal": "*",
+  "Action": "s3:PutObject",
+  "Resource": "arn:aws:s3:::data-vault-secure-01/*",
+  "Condition": {
+    "StringNotEquals": {
+      "s3:x-amz-server-side-encryption": "aws:kms"
+    }
+  }
+}</code></pre>
+
+      <div class="callout tip">
+        <div class="callout-icon">🏆</div>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice</div>
+          <p class="callout-text">Default encryption protects you against accidental unencrypted uploads, but only a bucket policy can outright <em>reject</em> a non-compliant upload before it lands. Use both together for defense in depth on sensitive buckets.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 09: CORS ══════════════════════════════ -->
+    <section id="cors" class="page-section">
+      <div class="section-label">📍 Section 09</div>
+      <h2 class="section-heading">CORS — Cross-Origin Resource Sharing</h2>
+      <p class="section-intro">CORS is a browser-enforced security mechanism that controls whether a web page from one origin is allowed to request resources hosted on a different origin.</p>
+
+      <h4>What Defines an "Origin"?</h4>
+      <p>An origin is the combination of <strong>scheme + host + port</strong>. For example, in <code>https://www.cloudportal-app.com</code> the scheme is HTTPS, the host is <code>www.cloudportal-app.com</code>, and the implied port is 443. Two URLs share the same origin only if all three match exactly.</p>
+
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 760 230" xmlns="http://www.w3.org/2000/svg">
+          <text x="380" y="24" text-anchor="middle" fill="#67e8f9" font-size="13" font-family="Sora, sans-serif" font-weight="600">CORS Pre-Flight Request Flow</text>
+
+          <g class="node-box">
+            <rect x="20" y="80" width="140" height="60" rx="10" fill="#1e4080" stroke="#60a5fa" stroke-width="1.5"/>
+            <text x="90" y="105" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Web Browser</text>
+            <text x="90" y="123" text-anchor="middle" fill="#93c5fd" font-size="10">visiting Origin A</text>
+          </g>
+
+          <line x1="160" y1="95" x2="300" y2="95" stroke="#94a3b8" stroke-width="2" class="flow-dash" marker-end="url(#arrow3)"/>
+          <text x="230" y="88" text-anchor="middle" fill="#94a3b8" font-size="9">1. OPTIONS preflight</text>
+
+          <g class="node-box">
+            <rect x="310" y="40" width="200" height="60" rx="10" fill="#0d1e35" stroke="#3b82f6" stroke-width="1.5"/>
+            <text x="410" y="63" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Origin A — Web App</text>
+            <text x="410" y="81" text-anchor="middle" fill="#93c5fd" font-size="10">app.cloudportal-app.com</text>
+          </g>
+
+          <line x1="160" y1="125" x2="320" y2="160" stroke="#94a3b8" stroke-width="2" class="flow-dash" marker-end="url(#arrow3)"/>
+          <text x="230" y="160" text-anchor="middle" fill="#94a3b8" font-size="9">2. preflight to Origin B</text>
+
+          <g class="node-box">
+            <rect x="330" y="135" width="220" height="60" rx="10" fill="#0d1e35" stroke="#06b6d4" stroke-width="1.5"/>
+            <text x="440" y="158" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Origin B — Asset Bucket</text>
+            <text x="440" y="176" text-anchor="middle" fill="#67e8f9" font-size="10">assets.cloudportal-cdn.com</text>
+          </g>
+
+          <line x1="550" y1="165" x2="620" y2="165" stroke="#34d399" stroke-width="2" class="flow-dash" marker-end="url(#arrow3g)"/>
+          <text x="660" y="158" text-anchor="middle" fill="#86efac" font-size="9">3. CORS headers</text>
+
+          <g class="node-box">
+            <rect x="600" y="175" width="140" height="50" rx="10" fill="#1e3a1e" stroke="#34d399" stroke-width="1.5"/>
+            <text x="670" y="195" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Allow-Origin: A</text>
+            <text x="670" y="212" text-anchor="middle" fill="#86efac" font-size="9">request approved</text>
+          </g>
+
+          <defs>
+            <marker id="arrow3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#94a3b8"/></marker>
+            <marker id="arrow3g" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#34d399"/></marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">Fig 9.1 — The browser sends a pre-flight OPTIONS request to Origin B; if Origin B responds with the correct Access-Control-Allow-Origin header, the real request proceeds.</div>
+      </div>
+
+      <div class="callout exam">
+        <div class="callout-icon">💼</div>
+        <div class="callout-body">
+          <div class="callout-title">Exam Tip — CORS on S3</div>
+          <p class="callout-text">When an S3-hosted static website needs to fetch assets from a different S3 bucket (a different origin), the <strong>asset bucket</strong> must have a CORS configuration that allows the calling origin — either a specific origin URL or <code>*</code> for any origin.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 10: CORS Hands-On ══════════════════════════════ -->
+    <section id="cors-hands-on" class="page-section">
+      <div class="section-label">📍 Section 10</div>
+      <h2 class="section-heading">Hands-On — Reproducing and Fixing a CORS Error</h2>
+      <p class="section-intro">A practical walkthrough showing exactly how a cross-origin request fails, and how a CORS configuration resolves it.</p>
+
+      <ol class="steps-list">
+        <li><span>Create bucket <code>portal-frontend-app-01</code> and host a static website with <code>index.html</code>, which fetches an extra page from itself first — confirm it loads successfully (same-origin).</span></li>
+        <li><span>Create a second bucket in a different region, <code>portal-assets-cdn-02</code>, enable static website hosting, unblock public access, and attach a public-read bucket policy.</span></li>
+        <li><span>Upload <code>extra-page.html</code> to the second bucket and confirm it loads directly via its own website endpoint.</span></li>
+        <li><span>Update <code>index.html</code> in the first bucket to <code>fetch()</code> the full URL of <code>extra-page.html</code> on the second bucket, then re-upload it.</span></li>
+        <li><span>Reload the first site and open browser developer tools — the console shows: <em>"Cross-Origin Request Blocked: the CORS header 'Access-Control-Allow-Origin' is missing."</em></span></li>
+        <li><span>On the second bucket, go to <strong>Permissions → CORS configuration</strong> and add a policy allowing the first bucket's website origin.</span></li>
+        <li><span>Reload the first site again — the extra page now loads successfully, and the network tab shows <code>Access-Control-Allow-Origin</code> and <code>Access-Control-Allow-Methods</code> response headers.</span></li>
+      </ol>
+
+      <pre><code>[
+  {
+    "AllowedOrigins": ["http://portal-frontend-app-01.s3-website-us-east-1.amazonaws.com"],
+    "AllowedMethods": ["GET"],
+    "AllowedHeaders": ["*"]
+  }
+]</code></pre>
+      <p>The <code>AllowedOrigins</code> value must exactly match the calling origin's URL — protocol, host, and no trailing slash.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 11: MFA Delete ══════════════════════════════ -->
+    <section id="mfa-delete" class="page-section">
+      <div class="section-label">📍 Section 11</div>
+      <h2 class="section-heading">MFA Delete</h2>
+      <p class="section-intro">MFA Delete adds a second authentication factor as a guardrail against the two most destructive S3 operations.</p>
+
+      <h4>When Is MFA Required?</h4>
+      <table>
+        <thead><tr><th>Operation</th><th>MFA Required?</th></tr></thead>
+        <tbody>
+          <tr><td>Permanently delete an object version</td><td>✅ Yes</td></tr>
+          <tr><td>Suspend bucket versioning</td><td>✅ Yes</td></tr>
+          <tr><td>Enable bucket versioning</td><td>❌ No</td></tr>
+          <tr><td>List deleted object versions</td><td>❌ No</td></tr>
+        </tbody>
+      </table>
+
+      <ul class="bullet-list">
+        <li>Versioning must already be enabled on the bucket — MFA Delete is an extension of versioning</li>
+        <li>Only the <strong>bucket owner (root account)</strong> can enable or disable MFA Delete</li>
+        <li>Cannot be toggled from the AWS Console — CLI only</li>
+      </ul>
+
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 700 170" xmlns="http://www.w3.org/2000/svg">
+          <text x="350" y="22" text-anchor="middle" fill="#67e8f9" font-size="13" font-family="Sora, sans-serif" font-weight="600">MFA Delete — Permanent Delete Attempt</text>
+
+          <g class="node-box">
+            <rect x="20" y="55" width="150" height="55" rx="10" fill="#1e4080" stroke="#60a5fa" stroke-width="1.5"/>
+            <text x="95" y="78" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">Root User + CLI</text>
+            <text x="95" y="95" text-anchor="middle" fill="#93c5fd" font-size="10">delete-object --version-id</text>
+          </g>
+
+          <line x1="170" y1="82" x2="260" y2="82" stroke="#94a3b8" stroke-width="2" class="flow-dash" marker-end="url(#arrow4)"/>
+
+          <g class="node-box">
+            <rect x="270" y="55" width="170" height="55" rx="10" fill="#3a0f0f" stroke="#ef4444" stroke-width="1.5"/>
+            <text x="355" y="78" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">MFA Code Required</text>
+            <text x="355" y="95" text-anchor="middle" fill="#fca5a5" font-size="10">--mfa "ARN code"</text>
+          </g>
+
+          <line x1="440" y1="82" x2="530" y2="82" stroke="#94a3b8" stroke-width="2" class="flow-dash" marker-end="url(#arrow4)"/>
+
+          <g class="node-box">
+            <rect x="540" y="55" width="150" height="55" rx="10" fill="#1e3a1e" stroke="#34d399" stroke-width="1.5"/>
+            <text x="615" y="78" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">Version Deleted</text>
+            <text x="615" y="95" text-anchor="middle" fill="#86efac" font-size="10">only if MFA valid</text>
+          </g>
+        </svg>
+        <div class="diagram-caption">Fig 11.1 — A permanent delete-version request is rejected unless a valid, current MFA device code is supplied.</div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 12: MFA Hands-On ══════════════════════════════ -->
+    <section id="mfa-hands-on" class="page-section">
+      <div class="section-label">📍 Section 12</div>
+      <h2 class="section-heading">Hands-On — Enabling MFA Delete</h2>
+      <p class="section-intro">A walkthrough of enabling MFA Delete via the CLI using a root account profile, and observing its enforcement.</p>
+
+      <ol class="steps-list">
+        <li><span>Create bucket <code>vault-mfa-protect-09</code> in <code>us-east-2</code> and enable versioning.</span></li>
+        <li><span>Confirm in IAM that the root account already has a virtual MFA device registered, and copy its ARN.</span></li>
+        <li><span>Create temporary root access keys (only ever for this purpose), then configure a CLI profile: <code>aws configure --profile root-mfa-admin</code>.</span></li>
+        <li><span>Enable MFA Delete using the CLI:</span></li>
+      </ol>
+
+      <pre><code>aws s3api put-bucket-versioning \
+  --bucket vault-mfa-protect-09 \
+  --versioning-configuration Status=Enabled,MFADelete=Enabled \
+  --mfa "arn:aws:iam::111122223333:mfa/root-device 123456" \
+  --profile root-mfa-admin</code></pre>
+
+      <ol class="steps-list" start="5">
+        <li><span>Refresh the bucket's <strong>Properties → Bucket Versioning</strong> page — it now shows <strong>MFA Delete: Enabled</strong>.</span></li>
+        <li><span>Upload an object, delete it (this only adds a delete marker since versioning is on), then attempt to permanently delete a specific version ID — this is rejected with an MFA-required error.</span></li>
+        <li><span>To reverse, re-run the same command with <code>MFADelete=Disabled</code> and a fresh MFA code, then confirm the version can now be permanently deleted.</span></li>
+        <li><span>Finally, deactivate and delete the temporary root access keys — they should never persist beyond this task.</span></li>
+      </ol>
+
+      <div class="callout warning">
+        <div class="callout-icon">⚠️</div>
+        <div class="callout-body">
+          <div class="callout-title">Warning — Root Account Hygiene</div>
+          <p class="callout-text">Using root account access keys is strongly discouraged for everyday operations. MFA Delete configuration is one of the few legitimate exceptions, since only the root account can toggle it. Always remove the temporary keys immediately after use.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 13: Interview Q&A ══════════════════════════════ -->
+    <section id="interview" class="page-section">
+      <div class="section-label">📍 Section 13</div>
+      <h2 class="section-heading">Interview &amp; Scenario Q&amp;A</h2>
+      <p class="section-intro">Common scenario-based questions covering this tutorial's material.</p>
+
+      <div class="qa-list">
+        <div class="qa-item">
+          <div class="qa-q">A high-throughput S3 workload using SSE-KMS is suddenly getting throttled. Why, and how do you fix it?</div>
+          <p class="qa-a">Every SSE-KMS read/write calls the KMS API (<code>GenerateDataKey</code>/<code>Decrypt</code>), which is subject to a per-second regional quota. At very high request rates this quota is exhausted, causing throttling. Fixes include requesting a quota increase via Service Quotas, enabling S3 Bucket Keys to reduce the number of KMS calls per object, or switching less-sensitive workloads to SSE-S3.</p>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">A static site in one S3 bucket can't load images from a second S3 bucket. What's the likely cause and fix?</div>
+          <p class="qa-a">This is a classic CORS issue — the browser blocks the cross-origin fetch because the asset bucket lacks the correct <code>Access-Control-Allow-Origin</code> header. The fix is to add a CORS configuration on the asset bucket that allows the calling site's exact origin (or <code>*</code>).</p>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">A teammate accidentally deleted a critical object version and it's gone permanently. How do you prevent recurrence?</div>
+          <p class="qa-a">Enable versioning plus MFA Delete on the bucket. With MFA Delete active, permanently deleting any version (or suspending versioning) requires a valid MFA code from the root account, which prevents accidental or unauthorized permanent loss while still allowing normal delete-marker operations.</p>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">Compliance requires that no object can ever be uploaded to a bucket without KMS encryption, even if developers forget to set headers. What do you implement?</div>
+          <p class="qa-a">A bucket policy that denies <code>s3:PutObject</code> unless the request includes <code>x-amz-server-side-encryption: aws:kms</code>. Bucket policies are evaluated before default encryption settings, so this rejects non-compliant uploads outright rather than silently encrypting them differently.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ══ SECTION 14: About the Author ══════════════════════════════ -->
+    <section id="about" class="page-section">
+      <div class="author-section">
+        <div class="author-header">
+          <div class="author-avatar">👨‍💻</div>
+          <div class="author-meta">
+            <h3>Mohammed Abdul</h3>
+            <div class="role">Data Protection Architect</div>
+            <p>Mohammed Abdul is a Data Protection Architect with more than 10 years of experience in Hybrid Cloud, having worked with global clients across various industries. With extensive expertise in enterprise backup and recovery solutions, Mohammed specializes in AWS, Azure, GCP, Commvault, Veeam, NetBackup, and NetApp technologies, helping organizations design and implement robust data protection strategies.</p>
+          </div>
+        </div>
+        <div class="tech-badges">
+          <span class="tech-badge">☁️ AWS</span>
+          <span class="tech-badge">🔷 Azure</span>
+          <span class="tech-badge">🟢 GCP</span>
+          <span class="tech-badge">🔵 Commvault</span>
+          <span class="tech-badge">🟢 Veeam</span>
+          <span class="tech-badge">🟠 Veritas NetBackup</span>
+          <span class="tech-badge">🗄️ NetApp</span>
+        </div>
+        <a href="mailto:abdul.md.20000102@gmail.com" class="email-card">✉️ abdul.md.20000102@gmail.com</a>
+        <div class="disclaimer-box">
+          <strong>Disclaimer:</strong> This content is for educational purposes and training material. Always refer to official AWS documentation and follow your organization's procedures for production implementations.
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<script>
+  document.querySelectorAll('.toc-list a').forEach(link => {
+    link.addEventListener('click', function() {
+      document.querySelectorAll('.toc-list a').forEach(l => l.classList.remove('active'));
+      this.classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>

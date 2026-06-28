@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS CloudFront & Global Accelerator — Technical Tutorial | Cloud Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-card: #1c2230;
+    --bg-sidebar: #111827;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --accent-orange: #f97316;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border-color: #2d3748;
+    --border-bright: #374151;
+    --sidebar-width: 280px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    display: flex;
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  /* ── Sidebar ─────────────────────────────── */
+  .sidebar {
+    width: var(--sidebar-width);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    overflow-y: auto;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar-logo {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .sidebar-logo .brand {
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-cyan);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .sidebar-logo .subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 3px;
+  }
+
+  .toc-title {
+    padding: 16px 20px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .toc-list { list-style: none; padding: 0 8px 20px; }
+
+  .toc-list li a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 400;
+    transition: all 0.2s;
+  }
+
+  .toc-list li a:hover {
+    background: rgba(59,130,246,0.12);
+    color: var(--accent-blue);
+  }
+
+  .toc-list li a .icon { font-size: 14px; width: 18px; flex-shrink: 0; }
+  .toc-list li a .num {
+    font-size: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--text-muted);
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .toc-divider { height: 1px; background: var(--border-color); margin: 8px 20px; }
+
+  /* ── Main ─────────────────────────────────── */
+  .main-content { margin-left: var(--sidebar-width); flex: 1; min-height: 100vh; }
+
+  .page-header {
+    background: linear-gradient(135deg, #0f1f3d 0%, #0d1a2e 50%, #081525 100%);
+    border-bottom: 1px solid var(--border-color);
+    padding: 56px 60px 48px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .page-header::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .page-header::after {
+    content: '';
+    position: absolute;
+    bottom: -80px; left: 200px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(6,182,212,0.07) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(59,130,246,0.15);
+    border: 1px solid rgba(59,130,246,0.3);
+    color: var(--accent-blue);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 20px;
+  }
+
+  .page-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 36px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+
+  .page-title span { color: var(--accent-cyan); }
+
+  .page-subtitle {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 620px;
+    margin-bottom: 28px;
+  }
+
+  .header-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .tag {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .tag-blue { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+  .tag-cyan { background: rgba(6,182,212,0.12); color: #22d3ee; border: 1px solid rgba(6,182,212,0.25); }
+  .tag-green { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+  .tag-amber { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+  .tag-purple { background: rgba(139,92,246,0.12); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.25); }
+
+  /* Content */
+  .content-wrap { max-width: 900px; padding: 48px 60px 80px; }
+
+  .section-block { margin-bottom: 64px; }
+
+  .section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(6,182,212,0.08);
+    border: 1px solid rgba(6,182,212,0.2);
+    color: var(--accent-cyan);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  h2.section-heading {
+    font-family: 'Sora', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+    padding-top: 4px;
+  }
+
+  .section-intro {
+    color: var(--text-secondary);
+    font-size: 15px;
+    margin-bottom: 28px;
+    max-width: 700px;
+  }
+
+  h3 {
+    font-family: 'Sora', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: #e2e8f0;
+    margin: 28px 0 12px;
+  }
+
+  h4 {
+    font-family: 'Sora', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: #cbd5e1;
+    margin: 20px 0 8px;
+  }
+
+  p { margin-bottom: 14px; color: var(--text-secondary); }
+
+  ul, ol { padding-left: 20px; margin-bottom: 16px; color: var(--text-secondary); }
+  li { margin-bottom: 6px; }
+  li strong { color: var(--text-primary); }
+
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+
+  .card-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0; }
+
+  .feature-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .feature-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+
+  .feature-card.blue::before { background: var(--accent-blue); }
+  .feature-card.cyan::before { background: var(--accent-cyan); }
+  .feature-card.green::before { background: var(--accent-green); }
+  .feature-card.amber::before { background: var(--accent-amber); }
+  .feature-card.purple::before { background: var(--accent-purple); }
+  .feature-card.orange::before { background: var(--accent-orange); }
+
+  .feature-card:hover { border-color: var(--border-bright); transform: translateY(-2px); }
+
+  .feature-card .fc-icon { font-size: 26px; margin-bottom: 10px; }
+  .feature-card .fc-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+
+  .feature-card .fc-desc { font-size: 13px; color: var(--text-secondary); margin: 0; }
+
+  /* Callouts */
+  .callout {
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    display: flex;
+    gap: 14px;
+  }
+
+  .callout-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .callout-body { flex: 1; }
+  .callout-title { font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+  .callout-text { font-size: 13.5px; margin: 0; line-height: 1.6; }
+
+  .callout.tip { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25); }
+  .callout.tip .callout-title { color: #34d399; }
+  .callout.tip .callout-text { color: #a7f3d0; }
+
+  .callout.warning { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); }
+  .callout.warning .callout-title { color: #fcd34d; }
+  .callout.warning .callout-text { color: #fde68a; }
+
+  .callout.info { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); }
+  .callout.info .callout-title { color: #93c5fd; }
+  .callout.info .callout-text { color: #bfdbfe; }
+
+  .callout.exam { background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.25); }
+  .callout.exam .callout-title { color: #c4b5fd; }
+  .callout.exam .callout-text { color: #ddd6fe; }
+
+  .callout.note { background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2); }
+  .callout.note .callout-title { color: #67e8f9; }
+  .callout.note .callout-text { color: #cffafe; }
+
+  /* Code */
+  pre, code { font-family: 'JetBrains Mono', monospace; }
+
+  pre {
+    background: #0a0f1a;
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--accent-blue);
+    border-radius: 6px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    font-size: 13px;
+    color: #a5d8ff;
+    margin: 14px 0;
+    line-height: 1.6;
+  }
+
+  code {
+    background: rgba(59,130,246,0.1);
+    color: #93c5fd;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+
+  pre code { background: none; color: inherit; padding: 0; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 14px; }
+
+  thead th {
+    background: var(--bg-secondary);
+    color: var(--accent-cyan);
+    font-family: 'Sora', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 12px 16px;
+    border-bottom: 2px solid var(--border-color);
+    text-align: left;
+  }
+
+  tbody td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    vertical-align: top;
+  }
+
+  tbody tr:hover td { background: rgba(59,130,246,0.04); }
+  tbody td:first-child { color: #e2e8f0; font-weight: 500; }
+
+  /* SVG diagram container */
+  .diagram-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 24px 0;
+    overflow: hidden;
+  }
+
+  .diagram-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-cyan);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .diagram-caption {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 12px;
+    text-align: center;
+    font-style: italic;
+  }
+
+  /* Steps */
+  .steps-list { list-style: none; padding: 0; counter-reset: step; }
+
+  .steps-list li {
+    counter-increment: step;
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    align-items: flex-start;
+  }
+
+  .steps-list li::before {
+    content: counter(step);
+    background: rgba(59,130,246,0.2);
+    border: 1px solid rgba(59,130,246,0.4);
+    color: var(--accent-blue);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* Comparison */
+  .compare-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+
+  .compare-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .compare-panel.left { border-top: 3px solid var(--accent-blue); }
+  .compare-panel.right { border-top: 3px solid var(--accent-purple); }
+
+  .compare-panel .cp-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .compare-panel ul { padding-left: 16px; }
+  .compare-panel li { font-size: 13.5px; margin-bottom: 8px; }
+
+  /* Interview QA */
+  .qa-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+
+  .qa-q {
+    font-family: 'Sora', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent-amber);
+    margin-bottom: 10px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .qa-q::before { content: 'Q'; background: rgba(245,158,11,0.15); color: var(--accent-amber); padding: 0px 7px; border-radius: 4px; font-size: 12px; font-weight: 700; height: fit-content; margin-top: 1px; }
+
+  .qa-a {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    display: flex;
+    gap: 10px;
+  }
+
+  .qa-a::before { content: 'A'; background: rgba(16,185,129,0.15); color: #34d399; padding: 0px 7px; border-radius: 4px; font-size: 12px; font-weight: 700; height: fit-content; margin-top: 1px; flex-shrink: 0; }
+
+  /* Author card */
+  .author-card {
+    background: linear-gradient(135deg, #1a2236 0%, #1c2230 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 32px;
+    margin-top: 60px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .author-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan), var(--accent-green));
+  }
+
+  .author-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+
+  .author-avatar {
+    width: 64px; height: 64px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+
+  .author-name {
+    font-family: 'Sora', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .author-role { font-size: 13px; color: var(--accent-cyan); margin-top: 2px; }
+
+  .author-bio { color: var(--text-secondary); font-size: 14px; margin-bottom: 16px; line-height: 1.7; }
+
+  .tech-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+
+  .tech-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid;
+  }
+
+  .badge-aws { background: rgba(245,158,11,0.1); color: #fcd34d; border-color: rgba(245,158,11,0.3); }
+  .badge-comm { background: rgba(59,130,246,0.1); color: #93c5fd; border-color: rgba(59,130,246,0.3); }
+  .badge-veeam { background: rgba(16,185,129,0.1); color: #34d399; border-color: rgba(16,185,129,0.3); }
+  .badge-netapp { background: rgba(139,92,246,0.1); color: #c4b5fd; border-color: rgba(139,92,246,0.3); }
+  .badge-azure { background: rgba(6,182,212,0.1); color: #67e8f9; border-color: rgba(6,182,212,0.3); }
+
+  .contact-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(59,130,246,0.1);
+    border: 1px solid rgba(59,130,246,0.3);
+    color: var(--accent-blue);
+    padding: 8px 16px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .contact-link:hover { background: rgba(59,130,246,0.2); color: #93c5fd; }
+
+  /* Animations */
+  @keyframes dash {
+    to { stroke-dashoffset: -20; }
+  }
+
+  .flow-line {
+    animation: dash 1s linear infinite;
+  }
+
+  /* Footer */
+  .page-footer {
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    padding: 24px 60px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: var(--sidebar-width);
+  }
+
+  /* Highlight */
+  .highlight-box {
+    background: rgba(6,182,212,0.06);
+    border: 1px solid rgba(6,182,212,0.2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+  }
+
+  .highlight-box p { margin: 0; color: #cffafe; font-size: 14px; }
+
+  /* Badge inline */
+  .inline-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(16,185,129,0.15);
+    color: #34d399;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  .inline-badge.new { background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .inline-badge.rec { background: rgba(16,185,129,0.15); color: #34d399; }
+  .inline-badge.dep { background: rgba(245,158,11,0.15); color: #fcd34d; }
+
+</style>
+</head>
+<body>
+
+<!-- ── LEFT SIDEBAR ─────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="brand">☁️ AWS Deep Dive</div>
+    <div class="subtitle">Content Delivery & Global Networking</div>
+  </div>
+
+  <div class="toc-title">Table of Contents</div>
+  <ul class="toc-list">
+    <li><a href="#overview"><span class="icon">🌐</span> CloudFront Overview <span class="num">01</span></a></li>
+    <li><a href="#origins"><span class="icon">📦</span> Origin Types <span class="num">02</span></a></li>
+    <li><a href="#how-it-works"><span class="icon">⚙️</span> How CloudFront Works <span class="num">03</span></a></li>
+    <li><a href="#vs-replication"><span class="icon">🔄</span> CDN vs S3 Replication <span class="num">04</span></a></li>
+    <li><a href="#s3-handson"><span class="icon">🛠️</span> Lab: CloudFront + S3 <span class="num">05</span></a></li>
+
+    <div class="toc-divider"></div>
+
+    <li><a href="#alb-origin"><span class="icon">🏗️</span> ALB / EC2 as Origin <span class="num">06</span></a></li>
+    <li><a href="#vpc-origins"><span class="icon">🔒</span> VPC Origins (New) <span class="num">07</span></a></li>
+    <li><a href="#geo"><span class="icon">🗺️</span> Geo Restriction <span class="num">08</span></a></li>
+    <li><a href="#cache-invalidation"><span class="icon">♻️</span> Cache Invalidation <span class="num">09</span></a></li>
+
+    <div class="toc-divider"></div>
+
+    <li><a href="#global-accelerator"><span class="icon">🚀</span> Global Accelerator <span class="num">10</span></a></li>
+    <li><a href="#anycast"><span class="icon">📡</span> Unicast vs Anycast <span class="num">11</span></a></li>
+    <li><a href="#cf-vs-ga"><span class="icon">⚖️</span> CloudFront vs GA <span class="num">12</span></a></li>
+    <li><a href="#ga-handson"><span class="icon">🛠️</span> Lab: Global Accelerator <span class="num">13</span></a></li>
+
+    <div class="toc-divider"></div>
+
+    <li><a href="#interview"><span class="icon">💬</span> Interview Q&amp;A <span class="num">14</span></a></li>
+    <li><a href="#author"><span class="icon">👤</span> About the Author <span class="num">—</span></a></li>
+  </ul>
+</aside>
+
+<!-- ── MAIN CONTENT ─────────────────────────── -->
+<main class="main-content">
+
+  <!-- Header -->
+  <div class="page-header">
+
+    <h1 class="page-title">AWS <span>CloudFront</span> &amp; Global Accelerator</h1>
+    <p class="page-subtitle">A hands-on technical tutorial covering content delivery networks, edge caching, geo-restriction, cache invalidation, and global traffic acceleration on AWS.</p>
+    <div class="header-tags">
+      <span class="tag tag-blue">CloudFront CDN</span>
+      <span class="tag tag-cyan">S3 Integration</span>
+      <span class="tag tag-green">VPC Origins</span>
+      <span class="tag tag-amber">Global Accelerator</span>
+      <span class="tag tag-purple">Edge Networking</span>
+    </div>
+  </div>
+
+  <div class="content-wrap">
+
+    <!-- ── SECTION 1: OVERVIEW ─────────────────── -->
+    <section class="section-block" id="overview">
+      <div class="section-label">📡 Section 01</div>
+      <h2 class="section-heading">CloudFront — Content Delivery Network (CDN)</h2>
+      <p class="section-intro">AWS CloudFront is a globally distributed content delivery network that accelerates the delivery of web assets by caching content at edge locations close to end users. On the AWS exam, whenever you see the term <strong>CDN</strong>, think <strong>CloudFront</strong>.</p>
+
+      <h3>Why Use a CDN?</h3>
+      <p>Without a CDN, every user request — regardless of their geographic location — must travel all the way to the origin server. This introduces latency proportional to distance. CloudFront solves this by maintaining a network of <strong>hundreds of points of presence (PoPs)</strong> around the globe, including edge locations and regional edge caches. Content is served locally, reducing round-trip time dramatically.</p>
+
+      <div class="grid-3">
+        <div class="feature-card blue">
+          <div class="fc-icon">⚡</div>
+          <div class="fc-title">Reduced Latency</div>
+          <p class="fc-desc">Content is cached at edge locations near users, dramatically cutting response times globally.</p>
+        </div>
+        <div class="feature-card cyan">
+          <div class="fc-icon">🛡️</div>
+          <div class="fc-title">DDoS Protection</div>
+          <p class="fc-desc">CloudFront's distributed nature absorbs volumetric attacks via AWS Shield integration.</p>
+        </div>
+        <div class="feature-card green">
+          <div class="fc-icon">🌍</div>
+          <div class="fc-title">Global Scale</div>
+          <p class="fc-desc">Hundreds of PoPs across every major continent deliver consistent performance worldwide.</p>
+        </div>
+      </div>
+
+      <!-- Architecture Diagram 1 -->
+      <div class="diagram-wrap">
+        <div class="diagram-title">📐 CloudFront Global Edge Architecture</div>
+        <svg viewBox="0 0 860 340" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Inter',sans-serif;">
+          <defs>
+            <linearGradient id="originGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#1e40af;stop-opacity:1"/>
+              <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:1"/>
+            </linearGradient>
+            <linearGradient id="edgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#065f46;stop-opacity:1"/>
+              <stop offset="100%" style="stop-color:#10b981;stop-opacity:1"/>
+            </linearGradient>
+            <linearGradient id="userGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#4c1d95;stop-opacity:1"/>
+              <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1"/>
+            </linearGradient>
+            <marker id="arrow" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#3b82f6"/>
+            </marker>
+            <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#10b981"/>
+            </marker>
+          </defs>
+
+          <!-- Origin S3 Bucket (center-right) -->
+          <rect x="590" y="120" width="200" height="100" rx="10" fill="url(#originGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="690" y="158" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">Origin Server</text>
+          <text x="690" y="178" fill="#bfdbfe" font-size="11" text-anchor="middle">S3 Bucket / ALB</text>
+          <text x="690" y="196" fill="#93c5fd" font-size="10" text-anchor="middle">ap-southeast-1 (Singapore)</text>
+
+          <!-- Edge Location: USA -->
+          <rect x="30" y="60" width="160" height="80" rx="8" fill="url(#edgeGrad)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="110" y="93" fill="#fff" font-size="12" font-weight="600" text-anchor="middle">Edge Location</text>
+          <text x="110" y="111" fill="#a7f3d0" font-size="11" text-anchor="middle">🇺🇸 North Virginia</text>
+          <text x="110" y="128" fill="#6ee7b7" font-size="10" text-anchor="middle">Cache: HIT ✓</text>
+
+          <!-- Edge Location: EU -->
+          <rect x="30" y="180" width="160" height="80" rx="8" fill="url(#edgeGrad)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="110" y="213" fill="#fff" font-size="12" font-weight="600" text-anchor="middle">Edge Location</text>
+          <text x="110" y="231" fill="#a7f3d0" font-size="11" text-anchor="middle">🇩🇪 Frankfurt</text>
+          <text x="110" y="248" fill="#6ee7b7" font-size="10" text-anchor="middle">Cache: MISS → Origin</text>
+
+          <!-- Edge Location: APAC -->
+          <rect x="30" y="295" width="160" height="36" rx="8" fill="url(#edgeGrad)" stroke="#10b981" stroke-width="1" opacity="0.7"/>
+          <text x="110" y="318" fill="#d1fae5" font-size="11" text-anchor="middle">🇯🇵 Tokyo · 🇧🇷 São Paulo · +200</text>
+
+          <!-- Users -->
+          <rect x="260" y="65" width="100" height="70" rx="8" fill="url(#userGrad)" stroke="#8b5cf6" stroke-width="1.5"/>
+          <text x="310" y="101" fill="#fff" font-size="22" text-anchor="middle">👤</text>
+          <text x="310" y="122" fill="#ddd6fe" font-size="11" text-anchor="middle">US Users</text>
+
+          <rect x="260" y="185" width="100" height="70" rx="8" fill="url(#userGrad)" stroke="#8b5cf6" stroke-width="1.5"/>
+          <text x="310" y="221" fill="#fff" font-size="22" text-anchor="middle">👤</text>
+          <text x="310" y="242" fill="#ddd6fe" font-size="11" text-anchor="middle">EU Users</text>
+
+          <!-- User → Edge arrows -->
+          <line x1="260" y1="100" x2="200" y2="100" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="4,3"/>
+          <line x1="260" y1="220" x2="200" y2="220" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="4,3"/>
+
+          <!-- Edge USA → Origin (cache miss shown for EU) -->
+          <line x1="590" y1="155" x2="440" y2="155" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+          <text x="515" y="148" fill="#34d399" font-size="10" text-anchor="middle">Private AWS Network</text>
+
+          <!-- Edge EU cache miss → origin via internal -->
+          <path d="M190 220 Q 390 300 590 190" stroke="#f59e0b" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+          <text x="400" y="308" fill="#fcd34d" font-size="10" text-anchor="middle">Cache MISS — fetch from origin</text>
+
+          <!-- CloudFront label box -->
+          <rect x="370" y="10" width="180" height="36" rx="8" fill="rgba(6,182,212,0.12)" stroke="rgba(6,182,212,0.4)" stroke-width="1"/>
+          <text x="460" y="28" fill="#22d3ee" font-size="12" font-weight="600" text-anchor="middle">☁️ AWS CloudFront</text>
+          <text x="460" y="42" fill="#67e8f9" font-size="10" text-anchor="middle">~450+ Edge Locations Globally</text>
+        </svg>
+        <p class="diagram-caption">Figure 1 — CloudFront edge caching: US users hit a cached copy (HIT), while EU users trigger an origin fetch on first request (MISS)</p>
+      </div>
+
+      <div class="callout tip">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <div class="callout-title">Tutorial Note</div>
+          <p class="callout-text">CloudFront also integrates with <strong>AWS WAF</strong> (Web Application Firewall) and <strong>AWS Shield</strong> for multi-layer DDoS protection at the edge — traffic never even reaches your origin during an attack.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 2: ORIGINS ─────────────────── -->
+    <section class="section-block" id="origins">
+      <div class="section-label">📦 Section 02</div>
+      <h2 class="section-heading">CloudFront Origin Types</h2>
+      <p class="section-intro">An <strong>origin</strong> is the authoritative source of your content — the backend that CloudFront fetches from when the edge cache doesn't have what a user requested. CloudFront supports multiple origin types.</p>
+
+      <div class="grid-2">
+        <div class="feature-card blue">
+          <div class="fc-icon">🪣</div>
+          <div class="fc-title">Amazon S3 Bucket</div>
+          <p class="fc-desc">Distribute and cache static files at the edge. Secured using <strong>Origin Access Control (OAC)</strong> — the bucket remains private, only CloudFront can read it.</p>
+        </div>
+        <div class="feature-card green">
+          <div class="fc-icon">🔒</div>
+          <div class="fc-title">VPC Origin (Private)</div>
+          <p class="fc-desc">Connect directly to private ALBs, NLBs, or EC2 instances inside a VPC without exposing them publicly. <span class="inline-badge new">NEW</span> Recommended for production.</p>
+        </div>
+        <div class="feature-card cyan">
+          <div class="fc-icon">🌐</div>
+          <div class="fc-title">S3 Static Website</div>
+          <p class="fc-desc">Use an S3 bucket configured as a static website as a custom HTTP origin. The bucket must have website hosting enabled.</p>
+        </div>
+        <div class="feature-card amber">
+          <div class="fc-icon">⚖️</div>
+          <div class="fc-title">Public HTTP Backend</div>
+          <p class="fc-desc">Any publicly accessible HTTP endpoint — a public Application Load Balancer, EC2 instance, or third-party server — can serve as a custom origin.</p>
+        </div>
+      </div>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <div class="callout-title">Security Warning</div>
+          <p class="callout-text">When using a public HTTP backend (old approach), you must restrict access to CloudFront's published IP ranges at the security group level. Failing to do so leaves your origin directly exposed to the internet. The new <strong>VPC Origin</strong> method eliminates this risk entirely.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 3: HOW IT WORKS ─────────────── -->
+    <section class="section-block" id="how-it-works">
+      <div class="section-label">⚙️ Section 03</div>
+      <h2 class="section-heading">How CloudFront Works — Request Lifecycle</h2>
+      <p class="section-intro">Understanding the request flow is essential for diagnosing cache behavior and configuring TTL correctly.</p>
+
+      <ol class="steps-list">
+        <li><strong>User sends an HTTP/HTTPS request</strong> to the CloudFront domain (e.g., <code>d3xyz123.cloudfront.net</code>). DNS routes this to the nearest edge location.</li>
+        <li><strong>Edge location checks its local cache.</strong> If the object is present and its TTL hasn't expired → <strong>Cache HIT</strong>. Content is returned immediately.</li>
+        <li><strong>On Cache MISS,</strong> the edge location forwards the request to your configured origin server (S3, ALB, etc.) over the AWS private backbone network.</li>
+        <li><strong>Origin responds</strong> with the content. The edge location caches the response locally for future requests.</li>
+        <li><strong>Subsequent requests</strong> from the same or nearby users are served directly from the edge cache — no origin round-trip needed until TTL expires.</li>
+      </ol>
+
+      <!-- Flow Diagram -->
+      <div class="diagram-wrap">
+        <div class="diagram-title">🔄 CloudFront Request Flow — Cache HIT vs MISS</div>
+        <svg viewBox="0 0 820 220" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Inter',sans-serif;">
+          <defs>
+            <linearGradient id="nodeGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#4c1d95"/>
+              <stop offset="100%" style="stop-color:#7c3aed"/>
+            </linearGradient>
+            <linearGradient id="nodeGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#065f46"/>
+              <stop offset="100%" style="stop-color:#059669"/>
+            </linearGradient>
+            <linearGradient id="nodeGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#1e3a8a"/>
+              <stop offset="100%" style="stop-color:#2563eb"/>
+            </linearGradient>
+            <marker id="arr2" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8"/>
+            </marker>
+            <marker id="arrGreen2" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#10b981"/>
+            </marker>
+            <marker id="arrAmber" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#f59e0b"/>
+            </marker>
+          </defs>
+
+          <!-- User -->
+          <rect x="20" y="80" width="110" height="60" rx="8" fill="url(#nodeGrad1)" stroke="#7c3aed" stroke-width="1.5"/>
+          <text x="75" y="107" fill="#fff" font-size="18" text-anchor="middle">👤</text>
+          <text x="75" y="128" fill="#ddd6fe" font-size="11" font-weight="600" text-anchor="middle">End User</text>
+
+          <!-- Arrow user → edge -->
+          <line x1="130" y1="110" x2="200" y2="110" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr2)"/>
+          <text x="165" y="102" fill="#64748b" font-size="10" text-anchor="middle">Request</text>
+
+          <!-- Edge Location -->
+          <rect x="200" y="60" width="160" height="100" rx="8" fill="url(#nodeGrad2)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="280" y="94" fill="#fff" font-size="12" font-weight="700" text-anchor="middle">Edge Location</text>
+          <rect x="215" y="103" width="130" height="22" rx="4" fill="rgba(0,0,0,0.3)"/>
+          <text x="280" y="119" fill="#6ee7b7" font-size="10" text-anchor="middle">Cache Check</text>
+          <text x="280" y="148" fill="#a7f3d0" font-size="10" text-anchor="middle">HIT ✓ or MISS ✗</text>
+
+          <!-- Cache HIT path (returns down) -->
+          <path d="M200 90 Q 130 40 130 110" stroke="#10b981" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arrGreen2)"/>
+          <text x="110" y="55" fill="#34d399" font-size="10" text-anchor="middle">HIT → Return</text>
+          <text x="110" y="67" fill="#34d399" font-size="10" text-anchor="middle">from cache</text>
+
+          <!-- Arrow edge → origin (MISS) -->
+          <line x1="360" y1="110" x2="450" y2="110" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrAmber)"/>
+          <text x="405" y="102" fill="#fcd34d" font-size="10" text-anchor="middle">MISS → Fetch</text>
+          <text x="405" y="126" fill="#92400e" font-size="10" text-anchor="middle">Private backbone</text>
+
+          <!-- Origin -->
+          <rect x="450" y="70" width="150" height="80" rx="8" fill="url(#nodeGrad3)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="525" y="103" fill="#fff" font-size="12" font-weight="700" text-anchor="middle">Origin</text>
+          <text x="525" y="120" fill="#bfdbfe" font-size="11" text-anchor="middle">S3 / ALB / EC2</text>
+          <text x="525" y="138" fill="#93c5fd" font-size="10" text-anchor="middle">Authoritative Source</text>
+
+          <!-- Return from origin to edge -->
+          <path d="M450 130 Q 410 180 360 130" stroke="#3b82f6" stroke-width="1.5" fill="none" marker-end="url(#arr2)"/>
+          <text x="390" y="185" fill="#60a5fa" font-size="10" text-anchor="middle">Response + Cache</text>
+
+          <!-- Cache filled box -->
+          <rect x="620" y="70" width="170" height="80" rx="8" fill="rgba(16,185,129,0.08)" stroke="rgba(16,185,129,0.3)" stroke-width="1.5" stroke-dasharray="4,3"/>
+          <text x="705" y="100" fill="#34d399" font-size="12" font-weight="600" text-anchor="middle">✅ Cached at Edge</text>
+          <text x="705" y="118" fill="#6ee7b7" font-size="11" text-anchor="middle">TTL: Configurable</text>
+          <text x="705" y="136" fill="#a7f3d0" font-size="10" text-anchor="middle">Default: 24 hours</text>
+
+          <line x1="600" y1="110" x2="620" y2="110" stroke="#10b981" stroke-width="1.5" stroke-dasharray="3,2"/>
+        </svg>
+        <p class="diagram-caption">Figure 2 — On Cache HIT the edge responds immediately; on Cache MISS the edge fetches from origin, caches the response, then returns it to the user</p>
+      </div>
+    </section>
+
+    <!-- ── SECTION 4: vs S3 Replication ──────── -->
+    <section class="section-block" id="vs-replication">
+      <div class="section-label">🔄 Section 04</div>
+      <h2 class="section-heading">CloudFront vs S3 Cross-Region Replication</h2>
+      <p class="section-intro">These two services are often confused on AWS exams. They solve fundamentally different problems.</p>
+
+      <div class="compare-row">
+        <div class="compare-panel left">
+          <div class="cp-title">☁️ CloudFront (CDN)</div>
+          <ul>
+            <li>Uses the <strong>Global Edge network</strong> (~450+ PoPs)</li>
+            <li>Content is <strong>cached</strong> at edge locations</li>
+            <li>Cache TTL: typically minutes to days</li>
+            <li>Ideal for <strong>static content</strong> serving worldwide</li>
+            <li>Requires no per-region setup</li>
+            <li>Content may be slightly stale until cache expires</li>
+            <li>Supports both static and dynamic content</li>
+          </ul>
+        </div>
+        <div class="compare-panel right">
+          <div class="cp-title">🔁 S3 Cross-Region Replication</div>
+          <ul>
+            <li>Replicates an <strong>entire S3 bucket</strong> to specific regions</li>
+            <li><strong>No caching</strong> — objects are fully replicated</li>
+            <li>Updates are near <strong>real-time</strong></li>
+            <li>Must be configured per target region</li>
+            <li>Ideal for <strong>dynamic content</strong> with strict consistency</li>
+            <li><strong>Read-only</strong> in target regions by default</li>
+            <li>Used for compliance, disaster recovery, low-latency reads</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout exam">
+        <span class="callout-icon">🎯</span>
+        <div class="callout-body">
+          <div class="callout-title">Exam &amp; Interview Tip</div>
+          <p class="callout-text">If the exam asks about serving static content to users globally with minimum latency → <strong>CloudFront</strong>. If it asks about replicating data for disaster recovery or compliance in specific regions → <strong>S3 Cross-Region Replication</strong>. The key differentiator is <em>caching vs replication</em>.</p>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Attribute</th>
+            <th>CloudFront</th>
+            <th>S3 Cross-Region Replication</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Purpose</td><td>Content delivery / CDN</td><td>Data replication</td></tr>
+          <tr><td>Scope</td><td>All ~450+ edge locations</td><td>Specific target regions only</td></tr>
+          <tr><td>Consistency</td><td>Cached (TTL-based)</td><td>Near real-time</td></tr>
+          <tr><td>Content Type</td><td>Static + dynamic</td><td>S3 objects only</td></tr>
+          <tr><td>Write Support</td><td>Upload via PUT supported</td><td>Read-only in target</td></tr>
+          <tr><td>Use Case</td><td>Global website, API acceleration</td><td>DR, compliance, multi-region reads</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ── SECTION 5: S3 HANDS ON ─────────────── -->
+    <section class="section-block" id="s3-handson">
+      <div class="section-label">🛠️ Section 05</div>
+      <h2 class="section-heading">Lab: Setting Up CloudFront with S3</h2>
+      <p class="section-intro">This walkthrough demonstrates how to create a private S3 bucket and serve its content securely through a CloudFront distribution using Origin Access Control (OAC).</p>
+
+      <h3>Prerequisites</h3>
+      <ul>
+        <li>An active AWS account with permissions for S3 and CloudFront</li>
+        <li>Sample content files ready to upload (HTML page, images)</li>
+        <li>Basic familiarity with the AWS Management Console</li>
+      </ul>
+
+      <h3>Step-by-Step Guide</h3>
+
+      <ol class="steps-list">
+        <li>
+          <div>
+            <strong>Create a private S3 bucket</strong><br/>
+            Navigate to <strong>S3 → Create bucket</strong>. Give it a unique name (e.g., <code>acme-web-assets-prod-01</code>). Leave <em>Block all public access</em> enabled. Do not add any public bucket policy — the bucket stays private.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Upload your content</strong><br/>
+            Upload your assets — e.g., <code>index.html</code>, <code>logo.png</code>, and supporting images. These objects are private at this stage and cannot be accessed via direct S3 URLs.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Create a CloudFront Distribution</strong><br/>
+            Navigate to <strong>CloudFront → Create distribution</strong>. Select the <strong>Free plan</strong> (sufficient for labs). Set the <strong>origin type</strong> to <em>Amazon S3</em> and select your bucket.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Enable OAC (Origin Access Control)</strong><br/>
+            When prompted, select <em>Allow private S3 bucket access to CloudFront</em> using the recommended OAC settings. CloudFront will automatically update your S3 bucket policy to allow only this distribution.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Review the auto-generated bucket policy</strong><br/>
+            After the distribution is created, navigate to <strong>S3 → Permissions → Bucket policy</strong>. You'll see a policy granting <code>s3:GetObject</code> permission exclusively to your CloudFront distribution's service principal.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Access content via CloudFront domain</strong><br/>
+            Copy the distribution domain name (e.g., <code>d2abc123xyz.cloudfront.net</code>). Open it in a browser followed by a resource path like <code>/logo.png</code> or <code>/index.html</code>.
+          </div>
+        </li>
+      </ol>
+
+      <div class="callout info">
+        <span class="callout-icon">ℹ️</span>
+        <div class="callout-body">
+          <div class="callout-title">Bucket Policy Example (OAC)</div>
+          <p class="callout-text">CloudFront automatically injects a bucket policy like the one below. Do not remove or override it.</p>
+        </div>
+      </div>
+      <pre>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCloudFrontServicePrincipal",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudfront.amazonaws.com"
+      },
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::acme-web-assets-prod-01/*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceArn": "arn:aws:cloudfront::123456789012:distribution/EDFDVBD6EXAMPLE"
+        }
+      }
+    }
+  ]
+}</pre>
+
+      <div class="callout tip">
+        <span class="callout-icon">✅</span>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice</div>
+          <p class="callout-text">Always use <strong>Origin Access Control (OAC)</strong> over the older Origin Access Identity (OAI). OAC supports S3 SSE-KMS encryption, all S3 storage classes, and is the AWS-recommended approach going forward.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 6: ALB/EC2 ORIGIN ─────────── -->
+    <section class="section-block" id="alb-origin">
+      <div class="section-label">🏗️ Section 06</div>
+      <h2 class="section-heading">Using ALB or EC2 as a CloudFront Origin</h2>
+      <p class="section-intro">When your application runs on compute (EC2, containers, or behind a load balancer) rather than object storage, CloudFront can still sit in front of it — using either VPC Origins (recommended) or a public HTTP backend (legacy approach).</p>
+
+      <!-- Architecture Diagram -->
+      <div class="diagram-wrap">
+        <div class="diagram-title">🏗️ Legacy Public Origin vs Modern VPC Origin</div>
+        <svg viewBox="0 0 820 280" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Inter',sans-serif;">
+          <defs>
+            <linearGradient id="cfGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#0c4a6e"/>
+              <stop offset="100%" style="stop-color:#0284c7"/>
+            </linearGradient>
+            <marker id="arrBlue" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#3b82f6"/>
+            </marker>
+            <marker id="arrRed" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#ef4444"/>
+            </marker>
+            <marker id="arrGreen3" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#10b981"/>
+            </marker>
+          </defs>
+
+          <!-- CloudFront box -->
+          <rect x="300" y="100" width="160" height="80" rx="8" fill="url(#cfGrad)" stroke="#0284c7" stroke-width="1.5"/>
+          <text x="380" y="132" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">CloudFront</text>
+          <text x="380" y="150" fill="#bae6fd" font-size="11" text-anchor="middle">Distribution</text>
+          <text x="380" y="168" fill="#7dd3fc" font-size="10" text-anchor="middle">Edge Locations</text>
+
+          <!-- Legacy side (left) -->
+          <rect x="20" y="20" width="220" height="110" rx="8" fill="rgba(239,68,68,0.06)" stroke="rgba(239,68,68,0.3)" stroke-width="1.5"/>
+          <text x="130" y="42" fill="#ef4444" font-size="11" font-weight="700" text-anchor="middle">⚠️ LEGACY APPROACH</text>
+          <rect x="40" y="55" width="80" height="60" rx="6" fill="rgba(239,68,68,0.15)" stroke="#ef4444" stroke-width="1"/>
+          <text x="80" y="83" fill="#fca5a5" font-size="11" font-weight="600" text-anchor="middle">Public ALB</text>
+          <text x="80" y="99" fill="#fca5a5" font-size="10" text-anchor="middle">Exposed</text>
+          <rect x="150" y="65" width="70" height="44" rx="6" fill="rgba(239,68,68,0.1)" stroke="#ef4444" stroke-width="1"/>
+          <text x="185" y="91" fill="#fca5a5" font-size="10" text-anchor="middle">EC2 (private)</text>
+
+          <line x1="130" y1="85" x2="150" y2="85" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2"/>
+
+          <line x1="240" y1="70" x2="300" y2="140" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrBlue)" stroke-dasharray="4,3"/>
+          <text x="262" y="110" fill="#ef4444" font-size="10" text-anchor="middle">Public IP</text>
+          <text x="262" y="122" fill="#ef4444" font-size="10" text-anchor="middle">SG Rules required</text>
+
+          <!-- Recommended side (right) -->
+          <rect x="560" y="20" width="240" height="240" rx="8" fill="rgba(16,185,129,0.05)" stroke="rgba(16,185,129,0.3)" stroke-width="1.5"/>
+          <text x="680" y="44" fill="#10b981" font-size="11" font-weight="700" text-anchor="middle">✅ RECOMMENDED (VPC ORIGIN)</text>
+          <text x="680" y="60" fill="#6ee7b7" font-size="10" text-anchor="middle">Private VPC — nothing exposed publicly</text>
+
+          <rect x="580" y="75" width="100" height="55" rx="6" fill="rgba(16,185,129,0.15)" stroke="#10b981" stroke-width="1"/>
+          <text x="630" y="101" fill="#a7f3d0" font-size="11" font-weight="600" text-anchor="middle">Private ALB</text>
+          <text x="630" y="118" fill="#6ee7b7" font-size="9" text-anchor="middle">Internal only</text>
+
+          <rect x="580" y="155" width="100" height="55" rx="6" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1"/>
+          <text x="630" y="181" fill="#a7f3d0" font-size="11" font-weight="600" text-anchor="middle">Private EC2</text>
+          <text x="630" y="198" fill="#6ee7b7" font-size="9" text-anchor="middle">No public IP</text>
+
+          <line x1="630" y1="130" x2="630" y2="155" stroke="#10b981" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrGreen3)"/>
+
+          <!-- VPC Origin connector box -->
+          <rect x="700" y="95" width="85" height="40" rx="5" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1"/>
+          <text x="742" y="113" fill="#22d3ee" font-size="10" font-weight="600" text-anchor="middle">VPC Origin</text>
+          <text x="742" y="127" fill="#67e8f9" font-size="9" text-anchor="middle">Connector</text>
+
+          <line x1="680" y1="100" x2="700" y2="113" stroke="#06b6d4" stroke-width="1" marker-end="url(#arrBlue)"/>
+          <line x1="460" y1="145" x2="700" y2="113" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrGreen3)"/>
+          <text x="570" y="138" fill="#34d399" font-size="10" text-anchor="middle">AWS Internal Network</text>
+
+          <!-- User -->
+          <rect x="20" y="195" width="80" height="55" rx="8" fill="rgba(139,92,246,0.15)" stroke="#8b5cf6" stroke-width="1.5"/>
+          <text x="60" y="225" fill="#fff" font-size="20" text-anchor="middle">👤</text>
+          <text x="60" y="243" fill="#ddd6fe" font-size="10" text-anchor="middle">User</text>
+
+          <line x1="100" y1="222" x2="300" y2="165" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrBlue)" stroke-dasharray="4,3"/>
+        </svg>
+        <p class="diagram-caption">Figure 3 — Legacy public origin requires managing CloudFront IP allowlists; VPC Origins keep everything private with no security group maintenance</p>
+      </div>
+    </section>
+
+    <!-- ── SECTION 7: VPC ORIGINS ─────────────── -->
+    <section class="section-block" id="vpc-origins">
+      <div class="section-label">🔒 Section 07</div>
+      <h2 class="section-heading">VPC Origins — The Recommended Approach</h2>
+      <p class="section-intro">VPC Origins allow CloudFront to connect directly to resources in private subnets, without requiring a public IP address or security group IP allowlisting.</p>
+
+      <div class="grid-3">
+        <div class="feature-card green">
+          <div class="fc-icon">🔐</div>
+          <div class="fc-title">Private ALB</div>
+          <p class="fc-desc">An Application Load Balancer in a private subnet — no public DNS or public IP required.</p>
+        </div>
+        <div class="feature-card cyan">
+          <div class="fc-icon">⚡</div>
+          <div class="fc-title">Private NLB</div>
+          <p class="fc-desc">Network Load Balancer for TCP/UDP workloads requiring ultra-low latency.</p>
+        </div>
+        <div class="feature-card amber">
+          <div class="fc-icon">🖥️</div>
+          <div class="fc-title">Private EC2</div>
+          <p class="fc-desc">Individual EC2 instances in private subnets can serve as direct CloudFront backends.</p>
+        </div>
+      </div>
+
+      <div class="callout tip">
+        <span class="callout-icon">✅</span>
+        <div class="callout-body">
+          <div class="callout-title">Best Practice</div>
+          <p class="callout-text">Use <strong>VPC Origins</strong> as your default configuration for compute-backed origins. It eliminates the need to maintain IP allowlists, reduces attack surface, and simplifies security group management.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 8: GEO RESTRICTION ─────────── -->
+    <section class="section-block" id="geo">
+      <div class="section-label">🗺️ Section 08</div>
+      <h2 class="section-heading">CloudFront Geo Restriction</h2>
+      <p class="section-intro">Geo restriction allows you to control which countries can access your CloudFront distribution. Country detection is performed using a third-party geo-IP database matched against the user's IP address.</p>
+
+      <div class="grid-2">
+        <div class="feature-card green">
+          <div class="fc-icon">✅</div>
+          <div class="fc-title">Allowlist Mode</div>
+          <p class="fc-desc">Only users from explicitly permitted countries can access content. All others receive a 403 Forbidden response.</p>
+        </div>
+        <div class="feature-card red">
+          <div class="fc-icon">🚫</div>
+          <div class="fc-title">Blocklist Mode</div>
+          <p class="fc-desc">Users from specified countries are denied access. All other countries are permitted by default.</p>
+        </div>
+      </div>
+
+      <h4>Common Use Cases</h4>
+      <ul>
+        <li>Enforcing <strong>copyright licensing</strong> restrictions (e.g., streaming media available only in licensed territories)</li>
+        <li>Blocking access from regions with <strong>trade compliance</strong> requirements</li>
+        <li><strong>Regional content differentiation</strong> — showing different content by country</li>
+      </ul>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <div class="callout-title">Plan Requirement</div>
+          <p class="callout-text">Geographic restrictions require a <strong>Pay-as-you-Go or paid CloudFront plan</strong>. The free tier does not include this feature. Upgrade your distribution plan before configuring geo-restriction.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 9: CACHE INVALIDATION ─────── -->
+    <section class="section-block" id="cache-invalidation">
+      <div class="section-label">♻️ Section 09</div>
+      <h2 class="section-heading">Cache Invalidation</h2>
+      <p class="section-intro">By default, CloudFront serves cached content until the TTL expires. When you update your origin and need the changes to be reflected immediately, you must explicitly invalidate the cache.</p>
+
+      <h3>What is Cache Invalidation?</h3>
+      <p>Cache invalidation instructs CloudFront to remove specific objects from all edge location caches. On the next request for those objects, the edge will fetch a fresh copy from origin and re-cache it.</p>
+
+      <div class="diagram-wrap">
+        <div class="diagram-title">♻️ Cache Invalidation Workflow</div>
+        <svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Inter',sans-serif;">
+          <defs>
+            <linearGradient id="s3bg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#1e3a8a"/>
+              <stop offset="100%" style="stop-color:#3b82f6"/>
+            </linearGradient>
+            <marker id="arrInv" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8"/>
+            </marker>
+            <marker id="arrInvAmber" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#f59e0b"/>
+            </marker>
+            <marker id="arrInvGreen" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#10b981"/>
+            </marker>
+          </defs>
+
+          <!-- Admin -->
+          <rect x="20" y="100" width="110" height="60" rx="8" fill="rgba(139,92,246,0.2)" stroke="#8b5cf6" stroke-width="1.5"/>
+          <text x="75" y="127" fill="#fff" font-size="18" text-anchor="middle">🧑‍💻</text>
+          <text x="75" y="148" fill="#ddd6fe" font-size="11" font-weight="600" text-anchor="middle">Admin</text>
+
+          <!-- Arrow admin → S3 update -->
+          <line x1="130" y1="130" x2="200" y2="130" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrInv)"/>
+          <text x="165" y="121" fill="#64748b" font-size="9" text-anchor="middle">1. Update</text>
+          <text x="165" y="145" fill="#64748b" font-size="9" text-anchor="middle">origin files</text>
+
+          <!-- S3 Bucket -->
+          <rect x="200" y="90" width="130" height="80" rx="8" fill="url(#s3bg)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="265" y="122" fill="#fff" font-size="12" font-weight="700" text-anchor="middle">S3 Origin</text>
+          <text x="265" y="140" fill="#bfdbfe" font-size="10" text-anchor="middle">Updated v2 files</text>
+          <text x="265" y="157" fill="#93c5fd" font-size="10" text-anchor="middle">index.html, /img/*</text>
+
+          <!-- Admin → CloudFront invalidation -->
+          <path d="M75 100 Q 75 40 400 60" stroke="#f59e0b" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arrInvAmber)"/>
+          <text x="210" y="35" fill="#fcd34d" font-size="10" text-anchor="middle">2. Submit Invalidation</text>
+          <text x="210" y="47" fill="#92400e" font-size="10" text-anchor="middle">/* or /images/* or /index.html</text>
+
+          <!-- CloudFront -->
+          <rect x="390" y="80" width="150" height="100" rx="8" fill="rgba(6,182,212,0.1)" stroke="#06b6d4" stroke-width="1.5"/>
+          <text x="465" y="115" fill="#fff" font-size="12" font-weight="700" text-anchor="middle">CloudFront</text>
+          <text x="465" y="133" fill="#cffafe" font-size="11" text-anchor="middle">Invalidation API</text>
+          <text x="465" y="150" fill="#67e8f9" font-size="10" text-anchor="middle">Propagates to all</text>
+          <text x="465" y="164" fill="#67e8f9" font-size="10" text-anchor="middle">edge locations</text>
+
+          <!-- Edge 1 -->
+          <rect x="590" y="50" width="110" height="60" rx="8" fill="rgba(239,68,68,0.1)" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,3"/>
+          <text x="645" y="78" fill="#fca5a5" font-size="11" font-weight="600" text-anchor="middle">Edge US</text>
+          <text x="645" y="97" fill="#ef4444" font-size="10" text-anchor="middle">❌ Cache Cleared</text>
+
+          <!-- Edge 2 -->
+          <rect x="590" y="140" width="110" height="60" rx="8" fill="rgba(239,68,68,0.1)" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,3"/>
+          <text x="645" y="168" fill="#fca5a5" font-size="11" font-weight="600" text-anchor="middle">Edge EU</text>
+          <text x="645" y="187" fill="#ef4444" font-size="10" text-anchor="middle">❌ Cache Cleared</text>
+
+          <line x1="540" y1="115" x2="590" y2="80" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrInvAmber)"/>
+          <line x1="540" y1="150" x2="590" y2="170" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrInvAmber)"/>
+
+          <!-- Next request -->
+          <text x="645" y="230" fill="#34d399" font-size="10" text-anchor="middle">3. Next user request → edge</text>
+          <text x="645" y="244" fill="#34d399" font-size="10" text-anchor="middle">fetches fresh copy from origin</text>
+          <line x1="645" y1="200" x2="645" y2="224" stroke="#10b981" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#arrInvGreen)"/>
+        </svg>
+        <p class="diagram-caption">Figure 4 — Invalidation propagates through all edge locations; subsequent requests re-fetch from origin and re-cache the latest version</p>
+      </div>
+
+      <h4>Common Invalidation Paths</h4>
+      <pre># Invalidate everything (most common)
+Path: /*
+
+# Invalidate a specific file
+Path: /index.html
+
+# Invalidate all files in a directory
+Path: /images/*
+Path: /assets/css/*
+
+# Invalidate multiple specific files
+Path: /index.html
+Path: /about.html</pre>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <div class="callout-title">Cost Consideration</div>
+          <p class="callout-text">Each invalidation request is free for up to <strong>1,000 path invalidations</strong> per month. Beyond that, each path costs $0.005. Using <code>/*</code> counts as a single path. Use targeted paths in production to minimize cost.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 10: GLOBAL ACCELERATOR ──────── -->
+    <section class="section-block" id="global-accelerator">
+      <div class="section-label">🚀 Section 10</div>
+      <h2 class="section-heading">AWS Global Accelerator — Overview</h2>
+      <p class="section-intro">AWS Global Accelerator is a networking service that routes user traffic through the AWS global backbone to improve performance for applications running in one or more AWS regions.</p>
+
+      <h3>The Problem It Solves</h3>
+      <p>When your application is deployed in a single region (e.g., Mumbai), users in distant regions (Tokyo, London, São Paulo) must traverse the public internet to reach it. Each router hop adds latency and introduces packet loss risk. Global Accelerator eliminates excessive public internet traversal by routing traffic to the nearest AWS edge location, then through the AWS private network directly to your application.</p>
+
+      <div class="diagram-wrap">
+        <div class="diagram-title">🌐 Global Accelerator — Traffic Flow</div>
+        <svg viewBox="0 0 820 310" xmlns="http://www.w3.org/2000/svg" style="width:100%;font-family:'Inter',sans-serif;">
+          <defs>
+            <linearGradient id="appGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#064e3b"/>
+              <stop offset="100%" style="stop-color:#059669"/>
+            </linearGradient>
+            <linearGradient id="edgeGAGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#1e3a5f"/>
+              <stop offset="100%" style="stop-color:#1d4ed8"/>
+            </linearGradient>
+            <marker id="gaArr" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#3b82f6"/>
+            </marker>
+            <marker id="gaArrGreen" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#10b981"/>
+            </marker>
+          </defs>
+
+          <!-- Application (right side) -->
+          <rect x="630" y="105" width="170" height="100" rx="10" fill="url(#appGrad)" stroke="#10b981" stroke-width="2"/>
+          <text x="715" y="140" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">Application</text>
+          <text x="715" y="158" fill="#a7f3d0" font-size="11" text-anchor="middle">ALB — eu-west-2</text>
+          <text x="715" y="178" fill="#6ee7b7" font-size="10" text-anchor="middle">Private Subnet</text>
+          <text x="715" y="193" fill="#6ee7b7" font-size="9" text-anchor="middle">10.0.1.0/24</text>
+
+          <!-- Anycast IPs -->
+          <rect x="340" y="115" width="180" height="80" rx="8" fill="rgba(245,158,11,0.1)" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="430" y="143" fill="#fcd34d" font-size="12" font-weight="700" text-anchor="middle">Anycast IPs</text>
+          <text x="430" y="162" fill="#fde68a" font-size="11" text-anchor="middle">104.21.0.1</text>
+          <text x="430" y="178" fill="#fde68a" font-size="11" text-anchor="middle">172.64.80.1</text>
+
+          <!-- AWS backbone arrow -->
+          <line x1="520" y1="155" x2="630" y2="155" stroke="#10b981" stroke-width="2.5" marker-end="url(#gaArrGreen)"/>
+          <text x="575" y="145" fill="#34d399" font-size="10" font-weight="600" text-anchor="middle">AWS Private</text>
+          <text x="575" y="158" fill="#34d399" font-size="9" text-anchor="middle">Backbone Network</text>
+          <text x="575" y="170" fill="#6ee7b7" font-size="9" text-anchor="middle">Low latency · Stable</text>
+
+          <!-- Users -->
+          <rect x="20" y="30" width="110" height="65" rx="8" fill="rgba(139,92,246,0.15)" stroke="#8b5cf6" stroke-width="1.5"/>
+          <text x="75" y="60" fill="#fff" font-size="18" text-anchor="middle">👤</text>
+          <text x="75" y="80" fill="#ddd6fe" font-size="11" font-weight="600" text-anchor="middle">US User</text>
+          <text x="75" y="93" fill="#c4b5fd" font-size="9" text-anchor="middle">New York</text>
+
+          <rect x="20" y="130" width="110" height="65" rx="8" fill="rgba(139,92,246,0.15)" stroke="#8b5cf6" stroke-width="1.5"/>
+          <text x="75" y="160" fill="#fff" font-size="18" text-anchor="middle">👤</text>
+          <text x="75" y="180" fill="#ddd6fe" font-size="11" font-weight="600" text-anchor="middle">EU User</text>
+          <text x="75" y="193" fill="#c4b5fd" font-size="9" text-anchor="middle">Amsterdam</text>
+
+          <rect x="20" y="230" width="110" height="65" rx="8" fill="rgba(139,92,246,0.15)" stroke="#8b5cf6" stroke-width="1.5"/>
+          <text x="75" y="260" fill="#fff" font-size="18" text-anchor="middle">👤</text>
+          <text x="75" y="280" fill="#ddd6fe" font-size="11" font-weight="600" text-anchor="middle">APAC User</text>
+          <text x="75" y="293" fill="#c4b5fd" font-size="9" text-anchor="middle">Sydney</text>
+
+          <!-- Edge locations -->
+          <rect x="170" y="35" width="120" height="55" rx="7" fill="url(#edgeGAGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="230" y="60" fill="#fff" font-size="11" font-weight="600" text-anchor="middle">Edge: Ashburn</text>
+          <text x="230" y="78" fill="#bfdbfe" font-size="10" text-anchor="middle">us-east-1 PoP</text>
+
+          <rect x="170" y="135" width="120" height="55" rx="7" fill="url(#edgeGAGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="230" y="160" fill="#fff" font-size="11" font-weight="600" text-anchor="middle">Edge: Dublin</text>
+          <text x="230" y="178" fill="#bfdbfe" font-size="10" text-anchor="middle">eu-west-1 PoP</text>
+
+          <rect x="170" y="237" width="120" height="55" rx="7" fill="url(#edgeGAGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="230" y="262" fill="#fff" font-size="11" font-weight="600" text-anchor="middle">Edge: Sydney</text>
+          <text x="230" y="280" fill="#bfdbfe" font-size="10" text-anchor="middle">ap-southeast-2 PoP</text>
+
+          <!-- User → Edge -->
+          <line x1="130" y1="62" x2="170" y2="62" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#gaArr)" stroke-dasharray="4,3"/>
+          <line x1="130" y1="162" x2="170" y2="162" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#gaArr)" stroke-dasharray="4,3"/>
+          <line x1="130" y1="264" x2="170" y2="264" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#gaArr)" stroke-dasharray="4,3"/>
+
+          <!-- Edge → Anycast IPs -->
+          <line x1="290" y1="62" x2="340" y2="135" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#gaArr)"/>
+          <line x1="290" y1="162" x2="340" y2="155" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#gaArr)"/>
+          <line x1="290" y1="264" x2="340" y2="175" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#gaArr)"/>
+
+          <text x="310" y="100" fill="#60a5fa" font-size="9" text-anchor="middle">Anycast</text>
+          <text x="310" y="110" fill="#60a5fa" font-size="9" text-anchor="middle">routing</text>
+        </svg>
+        <p class="diagram-caption">Figure 5 — Each user connects to the nearest edge PoP via the public internet (short hop), then traffic rides the AWS private backbone to the application</p>
+      </div>
+
+      <h3>Key Features</h3>
+
+      <div class="grid-2">
+        <div class="feature-card blue">
+          <div class="fc-icon">📡</div>
+          <div class="fc-title">2 Static Anycast IPs</div>
+          <p class="fc-desc">Two static global IPs are assigned to your accelerator. They never change, so clients don't need to update their IP allowlists.</p>
+        </div>
+        <div class="feature-card green">
+          <div class="fc-icon">❤️</div>
+          <div class="fc-title">Health Checks + Failover</div>
+          <p class="fc-desc">Automatic health checks on all endpoints. Failover to a healthy region occurs in under 60 seconds — great for disaster recovery.</p>
+        </div>
+        <div class="feature-card cyan">
+          <div class="fc-icon">⚖️</div>
+          <div class="fc-title">Intelligent Routing</div>
+          <p class="fc-desc">Routes to the lowest-latency edge, considering real-time network conditions — not just geographic proximity.</p>
+        </div>
+        <div class="feature-card purple">
+          <div class="fc-icon">🛡️</div>
+          <div class="fc-title">DDoS Protection</div>
+          <p class="fc-desc">Integrated with AWS Shield Standard. Two static IPs are easy to protect vs a dynamic IP range.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 11: ANYCAST ─────────────────── -->
+    <section class="section-block" id="anycast">
+      <div class="section-label">📡 Section 11</div>
+      <h2 class="section-heading">Unicast vs Anycast IP — The Key Concept</h2>
+      <p class="section-intro">Global Accelerator's routing model is built on <strong>Anycast IP</strong>, which behaves differently from the familiar Unicast model.</p>
+
+      <div class="compare-row">
+        <div class="compare-panel left">
+          <div class="cp-title">🎯 Unicast IP (Traditional)</div>
+          <ul>
+            <li>One server = one unique IP address</li>
+            <li>Client traffic is directed to a specific fixed server</li>
+            <li>If that server is geographically distant → high latency</li>
+            <li>Used by traditional DNS-based load balancing</li>
+          </ul>
+        </div>
+        <div class="compare-panel right">
+          <div class="cp-title">🌐 Anycast IP (Global Accelerator)</div>
+          <ul>
+            <li>Multiple servers share the <strong>same IP address</strong></li>
+            <li>Network routing sends client to the <strong>nearest server</strong></li>
+            <li>Transparent to the client — same IP, optimal routing</li>
+            <li>Enables single global IPs that route to closest PoP</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout exam">
+        <span class="callout-icon">🎯</span>
+        <div class="callout-body">
+          <div class="callout-title">Exam Tip</div>
+          <p class="callout-text">Questions about <strong>static global IP addresses</strong> that route to multiple regions → Global Accelerator using Anycast. Questions about <strong>caching content at the edge</strong> → CloudFront. The routing mechanism is the key differentiator.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 12: CF vs GA ────────────────── -->
+    <section class="section-block" id="cf-vs-ga">
+      <div class="section-label">⚖️ Section 12</div>
+      <h2 class="section-heading">CloudFront vs Global Accelerator</h2>
+      <p class="section-intro">Both services use the AWS global edge network and AWS Shield for DDoS protection. Their purposes are fundamentally different — understanding the distinction is critical for the exam.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Attribute</th>
+            <th>CloudFront</th>
+            <th>Global Accelerator</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Primary Purpose</td><td>Content delivery (CDN)</td><td>Application acceleration</td></tr>
+          <tr><td>Caching</td><td>✅ Yes — edge cache</td><td>❌ No — pure proxy</td></tr>
+          <tr><td>IP Addresses</td><td>Dynamic CloudFront IPs</td><td>2 Static Anycast IPs</td></tr>
+          <tr><td>Protocols</td><td>HTTP / HTTPS only</td><td>TCP, UDP (any protocol)</td></tr>
+          <tr><td>Content Served From</td><td>Edge locations (cached)</td><td>Application in AWS region</td></tr>
+          <tr><td>Health Checks</td><td>Origin health checks</td><td>Endpoint health checks + failover</td></tr>
+          <tr><td>Ideal For</td><td>Websites, APIs, static files</td><td>Gaming, IoT, VoIP, TCP apps</td></tr>
+          <tr><td>Client Cache Issues</td><td>Possible (IP changes)</td><td>None (static IPs never change)</td></tr>
+          <tr><td>Regional Failover</td><td>Slower (DNS-based)</td><td>Fast (&lt;60 seconds)</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <div class="callout-title">Decision Framework</div>
+          <p class="callout-text">Use <strong>CloudFront</strong> when you need edge caching, HTTP acceleration, or content delivery. Use <strong>Global Accelerator</strong> when you need static IPs, non-HTTP protocols, deterministic regional failover, or applications where caching is not applicable.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 13: GA HANDS ON ───────────── -->
+    <section class="section-block" id="ga-handson">
+      <div class="section-label">🛠️ Section 13</div>
+      <h2 class="section-heading">Lab: Deploying AWS Global Accelerator</h2>
+      <p class="section-intro">This lab provisions a Global Accelerator with EC2 backend endpoints in two regions to demonstrate Anycast-based geographic routing.</p>
+
+      <h3>Lab Architecture</h3>
+      <div class="highlight-box">
+        <p>📍 <strong>Region 1:</strong> us-east-1 (N. Virginia) — EC2 instance serving HTTP on port 80<br/>
+        📍 <strong>Region 2:</strong> eu-central-1 (Frankfurt) — EC2 instance serving HTTP on port 80<br/>
+        🌐 <strong>Global Accelerator</strong> routes each user to the nearest region automatically</p>
+      </div>
+
+      <h3>Step 1 — Launch EC2 Instances in Two Regions</h3>
+      <p>In each target region, launch a <code>t3.micro</code> Amazon Linux instance with the following user data script. Customize the region name in each instance's script:</p>
+
+      <pre>#!/bin/bash
+yum update -y
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+
+# Get instance metadata
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+
+echo "&lt;html&gt;&lt;body&gt;
+  &lt;h1&gt;Response from: us-east-1&lt;/h1&gt;
+  &lt;p&gt;Instance: $INSTANCE_ID&lt;/p&gt;
+  &lt;p&gt;AZ: $AZ&lt;/p&gt;
+&lt;/body&gt;&lt;/html&gt;" > /var/www/html/index.html</pre>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <div class="callout-title">Security Group Configuration</div>
+          <p class="callout-text">Each EC2 instance's security group must allow <strong>inbound TCP port 80 from 0.0.0.0/0</strong>. Global Accelerator's health checks and traffic will originate from various AWS IPs. For production, restrict this using Global Accelerator's IP ranges after setup.</p>
+        </div>
+      </div>
+
+      <h3>Step 2 — Create the Global Accelerator</h3>
+      <ol class="steps-list">
+        <li>Navigate to <strong>Global Accelerator → Create accelerator</strong>. Name it <code>prod-ga-web-01</code>. Type: <em>Standard</em>. Routing: <em>IPv4</em>.</li>
+        <li>Add a <strong>listener</strong>: Protocol TCP, Port 80. Client affinity: None.</li>
+        <li>Add <strong>endpoint groups</strong> for <code>us-east-1</code> and <code>eu-central-1</code>.</li>
+        <li>Under each endpoint group, add the corresponding EC2 instance as an endpoint type.</li>
+        <li>Configure <strong>health checks</strong>: Protocol HTTP, Path <code>/</code>, Port 80, Interval 10s, Threshold 2.</li>
+        <li>Wait for status to show <strong>Healthy</strong> on both endpoints (~2 minutes).</li>
+      </ol>
+
+      <h3>Step 3 — Validate Routing</h3>
+      <p>Once provisioned, copy one of the two static Anycast IPs. Open it in a browser. You should see a response from the endpoint geographically closest to your current location. Using a VPN to connect from a different country will demonstrate the accelerator routing to the other region.</p>
+
+      <div class="callout warning">
+        <span class="callout-icon">💸</span>
+        <div class="callout-body">
+          <div class="callout-title">Cost Warning — Clean Up After Lab</div>
+          <p class="callout-text">Global Accelerator charges <strong>$0.025/hour per accelerator</strong> plus data transfer fees. After completing the lab: (1) Disable the accelerator, (2) Delete the accelerator, (3) Terminate both EC2 instances in both regions.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION 14: INTERVIEW Q&A ─────────── -->
+    <section class="section-block" id="interview">
+      <div class="section-label">💬 Section 14</div>
+      <h2 class="section-heading">Scenario-Based Interview Questions</h2>
+      <p class="section-intro">Test your understanding with these real-world scenarios — the kind of questions you'll encounter in AWS certification exams and technical interviews.</p>
+
+      <div class="qa-block">
+        <div class="qa-q">Your company hosts a media streaming platform. Users in Asia report 4–5 second load times for video thumbnails hosted in S3 (us-east-1). What is the most cost-effective solution?</div>
+        <div class="qa-a">Deploy a CloudFront distribution with the S3 bucket as origin using Origin Access Control (OAC). CloudFront will cache the thumbnails at edge locations near Asia, reducing load times to under 100ms for subsequent requests. S3 Cross-Region Replication would copy data but doesn't cache — it's more expensive and doesn't solve the latency problem at scale.</div>
+      </div>
+
+      <div class="qa-block">
+        <div class="qa-q">A gaming company needs to expose two static IP addresses globally for their UDP-based game server fleet. Players must connect to the nearest region. Which service handles this?</div>
+        <div class="qa-a">AWS Global Accelerator. CloudFront does not support UDP traffic. Global Accelerator provides two static Anycast IPs, routes UDP traffic to the nearest PoP, then forwards it to the regional game server fleet via the AWS private backbone. The static IPs allow players to hardcode them in their firewall or client configs.</div>
+      </div>
+
+      <div class="qa-block">
+        <div class="qa-q">Your marketing team updated the website's hero image in S3, but users are still seeing the old image after 6 hours. Why, and how do you fix it immediately?</div>
+        <div class="qa-a">CloudFront is serving the old image from its edge cache because the TTL hasn't expired yet. The fix is to create a CloudFront invalidation for the affected path (e.g., <code>/images/hero.jpg</code> or <code>/*</code>). This removes the object from all edge caches. On the next request, the edge fetches the updated image from S3 and re-caches it. To prevent this in future, use versioned file names (e.g., <code>hero-v2.jpg</code>) — you never need to invalidate because the URL changes.</div>
+      </div>
+
+      <div class="qa-block">
+        <div class="qa-q">You need to prevent users from a specific country from accessing your CloudFront-distributed content due to licensing restrictions. What feature should you use?</div>
+        <div class="qa-a">CloudFront Geo Restriction. Configure a blocklist with the target country's country code. CloudFront uses a third-party geo-IP database to identify the user's country from their IP address and returns a 403 Forbidden response. Note that geo restriction requires a paid CloudFront plan — the free tier does not include this feature.</div>
+      </div>
+
+      <div class="qa-block">
+        <div class="qa-q">A solutions architect is migrating from directly exposing an Application Load Balancer to using CloudFront. How should they secure the ALB origin to prevent direct access bypassing CloudFront?</div>
+        <div class="qa-a">Use CloudFront VPC Origins (recommended). This keeps the ALB in a private subnet — it has no public IP and no public DNS. Only CloudFront can route to it via the VPC Origin connector. The legacy approach (setting ALB security group to allow CloudFront's public IP ranges) is fragile and harder to maintain. VPC Origins eliminate this dependency entirely and are the current AWS best practice.</div>
+      </div>
+
+      <div class="qa-block">
+        <div class="qa-q">Compare the failover behavior of CloudFront vs Global Accelerator when an origin region becomes unavailable.</div>
+        <div class="qa-a">CloudFront uses origin failover configured via origin groups — it can fall back to a secondary origin, but the process depends on DNS TTL and cache behavior. Global Accelerator performs active health checks every 10–30 seconds and automatically reroutes traffic to a healthy endpoint within <strong>under 60 seconds</strong> of failure detection. For applications requiring fast, deterministic regional failover, Global Accelerator is the superior choice.</div>
+      </div>
+    </section>
+
+    <!-- ── AUTHOR ──────────────────────────────── -->
+    <section id="author">
+      <div class="author-card">
+        <div class="author-header">
+          <div class="author-avatar">👨‍💻</div>
+          <div>
+            <div class="author-name">Mohammed Abdul</div>
+            <div class="author-role">Data Protection Architect · 10+ Years in Hybrid Cloud</div>
+          </div>
+        </div>
+
+        <p class="author-bio">Mohammed Abdul is a Data Protection Architect with more than 10 years of experience in Hybrid Cloud, working with global clients across financial services, healthcare, and enterprise technology sectors. He specializes in designing and implementing robust data protection strategies that span on-premises and multi-cloud environments.</p>
+
+        <div class="tech-badges">
+          <span class="tech-badge badge-aws">AWS</span>
+          <span class="tech-badge badge-azure">Azure</span>
+          <span class="tech-badge badge-azure">GCP</span>
+          <span class="tech-badge badge-comm">Commvault</span>
+          <span class="tech-badge badge-veeam">Veeam</span>
+          <span class="tech-badge badge-comm">NetBackup</span>
+          <span class="tech-badge badge-netapp">NetApp</span>
+        </div>
+
+        <a class="contact-link" href="mailto:abdul.md.20000102@gmail.com">
+          ✉️ &nbsp; abdul.md.20000102@gmail.com
+        </a>
+
+        <div class="callout note" style="margin-top:20px;margin-bottom:0;">
+          <span class="callout-icon">📌</span>
+          <div class="callout-body">
+            <div class="callout-title">Disclaimer</div>
+            <p class="callout-text">This content is intended for educational purposes and tutorial material only. Always consult the official AWS documentation and follow your organization's approved procedures for production implementations. Architecture decisions should be validated against current AWS service limits, pricing, and security best practices.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /content-wrap -->
+</main>
+
+
+
+<script>
+  // Active TOC highlighting on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const tocLinks = document.querySelectorAll('.toc-list a');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        tocLinks.forEach(link => {
+          link.classList.remove('active');
+          if (link.getAttribute('href') === '#' + entry.target.id) {
+            link.classList.add('active');
+          }
+        });
+      }
+    });
+  }, { threshold: 0.25 });
+
+  sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
